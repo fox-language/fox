@@ -1,0 +1,200 @@
+use std::testing::{assert_eq};
+use std::collections::{Map, Option, MapIterator};
+use std::fmt::{sprintf};
+
+pub fn test_map_i32_i32() {
+    let m: Map<i32, i32> = Map<i32, i32>::new();
+    m.set(1, 2);
+
+    let opt1: Option<i32> = m.get(1);
+    let opt1_is_some: bool = match opt1 { Some(v) => true, None() => false };
+    assert_eq(true, opt1_is_some);
+    match opt1 {
+        Some(val) => {
+            assert_eq(2, val);
+        },
+        None() => {},
+    };
+
+    let opt2: Option<i32> = m.get(2);
+    let opt2_is_some: bool = match opt2 { Some(v) => true, None() => false };
+    assert_eq(false, opt2_is_some);
+}
+
+pub fn test_map_str_str() {
+    let m: Map<str, str> = Map<str, str>::new();
+    m.set("foo", "bar");
+
+    let opt1: Option<str> = m.get("foo");
+    let opt1_is_some: bool = match opt1 { Some(v) => true, None() => false };
+    assert_eq(true, opt1_is_some);
+    match opt1 {
+        Some(val) => {
+            assert_eq("bar", val);
+        },
+        None() => {},
+    };
+
+    let opt2: Option<str> = m.get("baz");
+    let opt2_is_some: bool = match opt2 { Some(v) => true, None() => false };
+    assert_eq(false, opt2_is_some);
+}
+
+// The old DJB2+identity implementation made this regress:
+//   * strings were hashed by codepoint, not byte (multi-byte UTF-8 broke)
+//   * i32 keys used identity, so 1000 consecutive ints in a 16-bucket
+//     map all landed in 16 buckets and the linear probe chain grew
+//     to dozens of entries.
+//
+// With FNV-1a-32 + splitmix, the same workload round-trips cleanly.
+pub fn test_map_str_multibyte() {
+    let m: Map<str, i32> = Map<str, i32>::new();
+    m.set("café", 1);
+    m.set("日本語", 2);
+    m.set("🐈", 3);
+    let cafe_is_some: bool = match m.get("café") { Some(v) => true, None() => false };
+    assert_eq(cafe_is_some, true);
+    let nihongo_is_some: bool = match m.get("日本語") { Some(v) => true, None() => false };
+    assert_eq(nihongo_is_some, true);
+    let cat_is_some: bool = match m.get("🐈") { Some(v) => true, None() => false };
+    assert_eq(cat_is_some, true);
+    let missing_is_some: bool = match m.get("missing") { Some(v) => true, None() => false };
+    assert_eq(missing_is_some, false);
+}
+
+pub fn test_map_i32_many_keys() {
+    let m: Map<i32, i32> = Map<i32, i32>::with_capacity(2000);
+    let i: i32 = 0;
+    while i < 1000 {
+        m.set(i, i * 7);
+        i = i + 1;
+    }
+    let j: i32 = 0;
+    let found: i32 = 0;
+    while j < 1000 {
+        let opt: Option<i32> = m.get(j);
+        let is_some: bool = match opt { Some(v) => true, None() => false };
+        if is_some {
+            found = found + 1;
+        }
+        j = j + 1;
+    }
+    assert_eq(found, 1000);
+}
+
+pub fn test_map_str_overwrite() {
+    let m: Map<str, i32> = Map<str, i32>::new();
+    m.set("k", 1);
+    m.set("k", 2);
+    m.set("k", 3);
+    let opt: Option<i32> = m.get("k");
+    let opt_is_some: bool = match opt { Some(v) => true, None() => false };
+    assert_eq(true, opt_is_some);
+    match opt {
+        Some(v) => { assert_eq(3, v); },
+        None() => {},
+    };
+}
+
+pub fn test_map_has() {
+    let m: Map<i32, i32> = Map<i32, i32>::new();
+    m.set(42, 1);
+    assert_eq(true, m.has(42));
+    assert_eq(false, m.has(43));
+}
+
+pub fn test_map_i64_i64() {
+    let m: Map<i64, i64> = Map<i64, i64>::new();
+    m.set(123456789012345, 987654321098765);
+    m.set((-987654321098765), 111111111111111);
+
+    let opt1: Option<i64> = m.get(123456789012345);
+    let opt1_is_some: bool = match opt1 { Some(v) => true, None() => false };
+    assert_eq(true, opt1_is_some);
+    match opt1 {
+        Some(val) => {
+            assert_eq(987654321098765, val);
+        },
+        None() => {},
+    };
+
+    let opt2: Option<i64> = m.get((-987654321098765));
+    let opt2_is_some: bool = match opt2 { Some(v) => true, None() => false };
+    assert_eq(true, opt2_is_some);
+    match opt2 {
+        Some(val) => {
+            assert_eq(111111111111111, val);
+        },
+        None() => {},
+    };
+
+    let missing_is_some: bool = match m.get(111111) { Some(v) => true, None() => false };
+    assert_eq(false, missing_is_some);
+}
+
+pub fn test_map_literal_homogeneous() {
+    let m = { "foo": "bar", "baz": "qux" };
+    let foo_opt = m.get("foo");
+    let foo_is_some = match foo_opt { Some(v) => true, None() => false };
+    assert_eq(true, foo_is_some);
+    match foo_opt {
+        Some(v) => { assert_eq("bar", v); },
+        None() => {},
+    };
+}
+
+pub fn test_map_literal_i32() {
+    let m = { 1: 10, 2: 20 };
+    let opt = m.get(1);
+    let opt_is_some = match opt { Some(v) => true, None() => false };
+    assert_eq(true, opt_is_some);
+    match opt {
+        Some(v) => { assert_eq(10, v); },
+        None() => {},
+    };
+}
+
+pub fn test_map_literal_empty() {
+    let m: Map<str, i32> = {};
+    assert_eq(false, m.has("foo"));
+}
+
+pub fn test_map_literal_mixed() {
+    let m = { "foo": "bar", "age": 42 };
+    let foo_opt = m.get("foo");
+    let foo_is_some = match foo_opt { Some(v) => true, None() => false };
+    assert_eq(true, foo_is_some);
+    match foo_opt {
+        Some(v) => {
+            let s = sprintf("%s", v);
+            assert_eq("bar", s);
+        },
+        None() => {},
+    };
+
+    let age_opt = m.get("age");
+    let age_is_some = match age_opt { Some(v) => true, None() => false };
+    assert_eq(true, age_is_some);
+    match age_opt {
+        Some(v) => {
+            let s = sprintf("%d", v);
+            assert_eq("42", s);
+        },
+        None() => {},
+    };
+}
+
+pub fn test_map_iterator() {
+    let m = Map<str, i32>::new();
+    m.set("a", 10);
+    m.set("b", 20);
+    m.set("c", 30);
+
+    let iter = m.iter();
+    let sum: i32 = 0;
+    while let Some((k, v)) = iter.next() {
+        sum += v;
+    }
+    assert_eq(sum, 60);
+}
+

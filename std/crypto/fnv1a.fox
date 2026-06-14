@@ -1,0 +1,194 @@
+// std::crypto::fnv1a - FNV-1a non-cryptographic hash (RFC 9923).
+//
+// FNV-1a is the de-facto "FNV" hash. It's fast, has no magic
+// dependencies, and produces a uniformly distributed 32- or 64-bit
+// digest for short keys. It is *not* a cryptographic hash; do not use
+// it for security purposes.
+//
+// Two widths are supported:
+//   * 32-bit: state is an i32. Suitable for hash tables and small
+//             content addressing. Compatible with the canonical
+//             FNV-1a-32 reference implementation.
+//   * 64-bit: state is an i64. Better dispersion for large hash
+//             tables. Compatible with the canonical FNV-1a-64
+//             reference implementation.
+//
+// 32-bit hash of an empty input is the offset basis.
+
+pub const OFFSET_32: i32 = -2128831035;
+pub const PRIME_32: i32 = 16777619;
+
+pub const OFFSET_64: i64 = 14695981039346656037;
+pub const PRIME_64: i64 = 1099511628211;
+
+// 32-bit FNV-1a on a string (UTF-8 byte sequence).
+pub fn hash32_str(s: str): i32 {
+    let h: Hasher32 = Hasher32::new();
+    h.write_str(s);
+    return h.finish();
+}
+
+// 32-bit FNV-1a on a byte array.
+pub fn hash32_bytes(b: []byte): i32 {
+    let h: Hasher32 = Hasher32::new();
+    h.write_bytes(b);
+    return h.finish();
+}
+
+// 32-bit splitmix32 finalizer. Maps an i32 to a well-distributed 32-bit
+// value; much better than using the identity for small consecutive keys.
+pub fn hash32_i32(x: i32): i32 {
+    let h: i32 = x;
+    h = (h ^ (h >> 16)) * -2048144789;
+    h = (h ^ (h >> 13)) * -1028477387;
+    h = h ^ (h >> 16);
+    return h;
+}
+
+// 32-bit FNV-1a of an i64, fed as 8 little-endian bytes.
+pub fn hash32_i64(x: i64): i32 {
+    let h: Hasher32 = Hasher32::new();
+    h.write_i64(x);
+    return h.finish();
+}
+
+// 64-bit FNV-1a on a string.
+pub fn hash64_str(s: str): i64 {
+    let h: Hasher64 = Hasher64::new();
+    h.write_str(s);
+    return h.finish();
+}
+
+// 64-bit FNV-1a on a byte array.
+pub fn hash64_bytes(b: []byte): i64 {
+    let h: Hasher64 = Hasher64::new();
+    h.write_bytes(b);
+    return h.finish();
+}
+
+// 64-bit FNV-1a of an i32, fed as 4 little-endian bytes.
+pub fn hash64_i32(x: i32): i64 {
+    let h: Hasher64 = Hasher64::new();
+    h.write_i32(x);
+    return h.finish();
+}
+
+// 64-bit FNV-1a of an i64, fed as 8 little-endian bytes.
+pub fn hash64_i64(x: i64): i64 {
+    let h: Hasher64 = Hasher64::new();
+    h.write_i64(x);
+    return h.finish();
+}
+
+// Stateful 32-bit FNV-1a hasher. Use this to fold multiple values
+// into a single 32-bit digest, e.g. when hashing a (str, i32) pair.
+pub struct Hasher32 {
+    state: i32;
+}
+
+impl Hasher32 {
+    pub static fn new(): Hasher32 {
+        return Hasher32 { state: OFFSET_32 };
+    }
+
+    pub fn reset() {
+        self.state = OFFSET_32;
+    }
+
+    pub fn write_str(s: str) {
+        let i: i32 = 0;
+        let len: i32 = s.len();
+        while i < len {
+            self.state = (self.state ^ s.char_at(i)) * PRIME_32;
+            i = i + 1;
+        }
+    }
+
+    pub fn write_bytes(b: []byte) {
+        let i: i32 = 0;
+        let len: i32 = b.len();
+        while i < len {
+            self.state = (self.state ^ b[i]) * PRIME_32;
+            i = i + 1;
+        }
+    }
+
+    pub fn write_i32(x: i32) {
+        let i: i32 = 0;
+        while i < 4 {
+            let shift: i32 = i * 8;
+            self.state = (self.state ^ ((x >> shift) & 255)) * PRIME_32;
+            i = i + 1;
+        }
+    }
+
+    pub fn write_i64(x: i64) {
+        let i: i32 = 0;
+        while i < 8 {
+            let shift: i32 = i * 8;
+            let b: i32 = ((x >> (shift as i64)) & 255) as i32;
+            self.state = (self.state ^ b) * PRIME_32;
+            i = i + 1;
+        }
+    }
+
+    pub fn finish(): i32 {
+        return self.state;
+    }
+}
+
+// Stateful 64-bit FNV-1a hasher.
+pub struct Hasher64 {
+    state: i64;
+}
+
+impl Hasher64 {
+    pub static fn new(): Hasher64 {
+        return Hasher64 { state: OFFSET_64 };
+    }
+
+    pub fn reset() {
+        self.state = OFFSET_64;
+    }
+
+    pub fn write_str(s: str) {
+        let i: i32 = 0;
+        let len: i32 = s.len();
+        while i < len {
+            self.state = (self.state ^ (s.char_at(i) as i64)) * PRIME_64;
+            i = i + 1;
+        }
+    }
+
+    pub fn write_bytes(b: []byte) {
+        let i: i32 = 0;
+        let len: i32 = b.len();
+        while i < len {
+            self.state = (self.state ^ (b[i] as i64)) * PRIME_64;
+            i = i + 1;
+        }
+    }
+
+    pub fn write_i32(x: i32) {
+        let i: i32 = 0;
+        while i < 4 {
+            let shift: i32 = i * 8;
+            self.state = (self.state ^ (((x >> shift) & 255) as i64)) * PRIME_64;
+            i = i + 1;
+        }
+    }
+
+    pub fn write_i64(x: i64) {
+        let i: i32 = 0;
+        while i < 8 {
+            let shift: i32 = i * 8;
+            let b: i64 = ((x >> (shift as i64)) & 255);
+            self.state = (self.state ^ b) * PRIME_64;
+            i = i + 1;
+        }
+    }
+
+    pub fn finish(): i64 {
+        return self.state;
+    }
+}

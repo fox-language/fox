@@ -1,0 +1,105 @@
+use std::math;
+use std::testing::{assert_eq};
+
+// Basic sanity check: next_i32() returns a value
+pub fn test_i32_returns_value() {
+    let rng: Rng = Rng::new();
+    let r: i32 = rng.next_i32();
+    // Just verify it doesn't panic and returns something
+    assert_eq(true, true);
+}
+
+// i32 values should vary across calls (not guaranteed but highly likely)
+pub fn test_i32_varies() {
+    let rng: Rng = Rng::new();
+    let r1: i32 = rng.next_i32();
+    let r2: i32 = rng.next_i32();
+    let r3: i32 = rng.next_i32();
+    // Very unlikely all three are equal
+    assert_eq(false, r1 == r2);
+    assert_eq(false, r2 == r3);
+}
+
+// i64 basic test
+pub fn test_i64_returns_value() {
+    let rng: Rng = Rng::new();
+    let r: i64 = rng.next_i64();
+    assert_eq(true, true);
+}
+
+// i64 values should vary
+pub fn test_i64_varies() {
+    let rng: Rng = Rng::new();
+    let r1: i64 = rng.next_i64();
+    let r2: i64 = rng.next_i64();
+    assert_eq(false, r1 == r2);
+}
+
+// with_seed produces deterministic output
+pub fn test_seed_deterministic() {
+    let rng1: Rng = Rng::with_seed(42, 42);
+    let r1: i32 = rng1.next_i32();
+    let r2: i64 = rng1.next_i64();
+    
+    let rng2: Rng = Rng::with_seed(42, 42);
+    let r1_2: i32 = rng2.next_i32();
+    let r2_2: i64 = rng2.next_i64();
+    
+    assert_eq(r1, r1_2);
+    assert_eq(r2, r2_2);
+}
+
+// i32_range returns value in range
+pub fn test_i32_range() {
+    let rng: Rng = Rng::new();
+    let min: i32 = 10;
+    let max: i32 = 20;
+    let r: i32 = rng.next_i32_range(min, max);
+    assert_eq(r >= min, true);
+    assert_eq(r < max, true);
+}
+
+// i64_range returns value in range
+pub fn test_i64_range() {
+    let rng: Rng = Rng::new();
+    let min: i64 = 100;
+    let max: i64 = 200;
+    let r: i64 = rng.next_i64_range(min, max);
+    assert_eq(r >= min, true);
+    assert_eq(r < max, true);
+}
+
+// bool returns true or false
+pub fn test_bool() {
+    let rng: Rng = Rng::new();
+    // Just verify it produces a value without panicking
+    let b1: bool = rng.next_bool();
+    let b2: bool = rng.next_bool();
+    // Check that the values are different occasionally
+    // (they could be the same by chance, so we just verify no crash)
+    assert_eq(true, true);
+}
+
+// Different seeds produce different sequences (usually)
+pub fn test_different_seeds() {
+    let rng1: Rng = Rng::with_seed(1, 1);
+    let rng2: Rng = Rng::with_seed(2, 2);
+    let r1: i32 = rng1.next_i32();
+    let r2: i32 = rng2.next_i32();
+    assert_eq(false, r1 == r2);
+}
+
+// new() creates independent RNGs with same default seed
+pub fn test_new_creates_independent() {
+    let rng1: Rng = Rng::new();
+    let rng2: Rng = Rng::new();
+    let r1: i32 = rng1.next_i32();
+    let r2: i32 = rng2.next_i32();
+    // Both should produce the same first value with default seed
+    assert_eq(r1, r2);
+    
+    // But they diverge after
+    let r1b: i32 = rng1.next_i32();
+    let r2b: i32 = rng2.next_i32();
+    assert_eq(r1b, r2b);
+}

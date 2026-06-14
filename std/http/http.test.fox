@@ -1,0 +1,65 @@
+use std::http::{Header, Request, Response, Method};
+use std::testing::{assert_eq};
+
+pub fn test_http_get() {
+    let resp: Response = Request::get("https://example.com/get")
+        .send();
+    assert_eq(resp.status, 200);
+    assert_eq(resp.status_text, "OK");
+    assert_eq(resp.body, "hello get");
+}
+
+pub fn test_http_post() {
+    let headers: []Header = new [1]Header;
+    headers[0] = Header { name: "Content-Type", value: "text/plain" };
+    let resp: Response = Request::post("https://example.com/post")
+        .headers(headers)
+        .body("test-body")
+        .send();
+    assert_eq(resp.status, 200);
+    assert_eq(resp.status_text, "OK");
+    assert_eq(resp.body, "hello post: test-body");
+}
+
+pub fn test_http_headers() {
+    let headers: []Header = new [2]Header;
+    headers[0] = Header { name: "X-Test-1", value: "Value-1" };
+    headers[1] = Header { name: "X-Test-2", value: "Value-2" };
+
+    let resp: Response = Request::post("https://example.com/headers")
+        .headers(headers)
+        .send();
+    assert_eq(resp.status, 200);
+    
+    let has_h1: bool = false;
+    if resp.body.contains("\"X-Test-1\":\"Value-1\"") { has_h1 = true; }
+    if resp.body.contains("\"x-test-1\":\"Value-1\"") { has_h1 = true; }
+    assert_eq(has_h1, true);
+
+    let has_h2: bool = false;
+    if resp.body.contains("\"X-Test-2\":\"Value-2\"") { has_h2 = true; }
+    if resp.body.contains("\"x-test-2\":\"Value-2\"") { has_h2 = true; }
+    assert_eq(has_h2, true);
+}
+
+pub fn test_http_error() {
+    let resp: Response = Request::get("https://example.com/error")
+        .send();
+    assert_eq(resp.status, 0);
+    assert_eq(resp.body, "");
+}
+
+pub fn test_http_custom_method() {
+    let resp: Response = Request::new("https://example.com/get", Method::Get())
+        .send();
+    assert_eq(resp.status, 200);
+    assert_eq(resp.status_text, "OK");
+    assert_eq(resp.body, "hello get");
+}
+
+pub fn test_http_connect_and_trace() {
+    let req_connect: Request = Request::connect("https://example.com/connect");
+    let req_trace: Request = Request::trace("https://example.com/trace");
+    assert_eq(true, req_connect.url.eq("https://example.com/connect"));
+    assert_eq(true, req_trace.url.eq("https://example.com/trace"));
+}

@@ -1,0 +1,11 @@
+use std::math::{sin, cos, log};
+
+pub fn bench_math_complex(): f64 {
+    let sum: f64 = 0.0;
+    let i: f64 = 1.0;
+    while i <= 1000.0 {
+        sum = sum + sin(i) * cos(i) + i.sqrt() + log(i);
+        i = i + 1.0;
+    }
+    return sum;
+}

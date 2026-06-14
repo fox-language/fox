@@ -1,0 +1,97 @@
+use std::math::{sin};
+
+const N: i32 = 1024;
+const BIQUAD_PASSES: i32 = 64;
+const SINE_PASSES: i32 = 16;
+const RMS_PASSES: i32 = 64;
+const TWO_PI: f64 = 6.283185307179586;
+const DT: f64 = 0.0009765625;
+const INV_N: f64 = 0.0009765625;
+
+fn fill_signal(buf: []f64) {
+    let t: f64 = 0.0;
+    let i: i32 = 0;
+    while i < N {
+        buf[i] = 0.5 * sin(TWO_PI * 7.0 * t) + 0.3 * sin(TWO_PI * 41.0 * t);
+        t = t + DT;
+        i = i + 1;
+    }
+}
+
+pub fn bench_dsp_biquad_lowpass(): f64 {
+    let buf: []f64 = new [1024]f64;
+    fill_signal(buf);
+
+    let b0: f64 = 0.13110;
+    let b1: f64 = 0.26220;
+    let b2: f64 = 0.13110;
+    let a1: f64 = 0.0 - 0.74783;
+    let a2: f64 = 0.27217;
+
+    let pass: i32 = 0;
+    let checksum: f64 = 0.0;
+    while pass < BIQUAD_PASSES {
+        let x1: f64 = 0.0;
+        let x2: f64 = 0.0;
+        let y1: f64 = 0.0;
+        let y2: f64 = 0.0;
+        let i: i32 = 0;
+        while i < N {
+            let x0: f64 = buf[i];
+            let y0: f64 = b0 * x0 + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
+            buf[i] = y0;
+            x2 = x1;
+            x1 = x0;
+            y2 = y1;
+            y1 = y0;
+            i = i + 1;
+        }
+        checksum = checksum + y1;
+        pass = pass + 1;
+    }
+    return checksum;
+}
+
+pub fn bench_dsp_sine_synth(): f64 {
+    let buf: []f64 = new [1024]f64;
+    let phase_inc: f64 = 0.05;
+
+    let pass: i32 = 0;
+    let checksum: f64 = 0.0;
+    while pass < SINE_PASSES {
+        let phase: f64 = 0.0;
+        let i: i32 = 0;
+        while i < N {
+            buf[i] = sin(phase);
+            phase = phase + phase_inc;
+            if phase > TWO_PI {
+                phase = phase - TWO_PI;
+            }
+            i = i + 1;
+        }
+        checksum = checksum + buf[0];
+        pass = pass + 1;
+    }
+    return checksum;
+}
+
+pub fn bench_dsp_rms(): f64 {
+    let buf: []f64 = new [1024]f64;
+    fill_signal(buf);
+
+    let pass: i32 = 0;
+    let total: f64 = 0.0;
+    while pass < RMS_PASSES {
+        let sum_sq: f64 = 0.0;
+        let i: i32 = 0;
+        while i < N {
+            let x: f64 = buf[i];
+            sum_sq = sum_sq + x * x;
+            i = i + 1;
+        }
+        let rms: f64 = (sum_sq * INV_N).sqrt();
+        total = total + rms;
+        pass = pass + 1;
+    }
+    return total;
+}

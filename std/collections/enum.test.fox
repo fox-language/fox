@@ -1,0 +1,65 @@
+use std::testing::{assert_eq};
+
+enum Color {
+    Red();
+    Green();
+    Blue();
+}
+
+enum Shape {
+    Circle(i32);
+    Rectangle(i32, i32);
+    Point();
+}
+
+pub fn test_custom_enums_no_payload() {
+    let r: Color = Red();
+    let g: Color = Green();
+    let b: Color = Blue();
+
+    let tag_r: i32 = match r {
+        Red() => 1,
+        Green() => 2,
+        Blue() => 3,
+    };
+    let tag_g: i32 = match g {
+        Red() => 1,
+        Green() => 2,
+        Blue() => 3,
+    };
+    let tag_b: i32 = match b {
+        Red() => 1,
+        Green() => 2,
+        Blue() => 3,
+    };
+
+    assert_eq(1, tag_r);
+    assert_eq(2, tag_g);
+    assert_eq(3, tag_b);
+}
+
+pub fn test_custom_enums_with_payload() {
+    let c: Shape = Circle(15);
+    let r: Shape = Rectangle(10, 20);
+    let p: Shape = Point();
+
+    let area_c: i32 = match c {
+        Circle(radius) => radius,
+        Rectangle(w, h) => w * h,
+        Point() => 0,
+    };
+    let area_r: i32 = match r {
+        Circle(radius) => radius,
+        Rectangle(w, h) => w * h,
+        Point() => 0,
+    };
+    let area_p: i32 = match p {
+        Circle(radius) => radius,
+        Rectangle(w, h) => w * h,
+        Point() => 0,
+    };
+
+    assert_eq(15, area_c);
+    assert_eq(200, area_r);
+    assert_eq(0, area_p);
+}

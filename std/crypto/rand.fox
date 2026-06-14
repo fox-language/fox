@@ -1,0 +1,2 @@
+// This file has moved to std::math::rand
+// Use `use std::math;` and `Rng` instead

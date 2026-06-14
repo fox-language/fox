@@ -1,0 +1,1039 @@
+use std::collections::{Option, Vec};
+use std::macros::{StructDef, StructFieldDef};
+
+extern fn __fox_json_parse_int(s: str): i32;
+extern fn __fox_json_parse_float(s: str): f64;
+extern fn __fox_json_parse_string(s: str): str;
+extern fn __fox_json_encode_string(s: str): str;
+extern fn __fox_f64_to_str(v: f64): str;
+extern fn __fox_i32_to_str(v: i32): str;
+extern fn __fox_i64_to_str(v: i64): str;
+
+pub struct JsonScanner {
+    json: str;
+    bytes: []byte;
+    pos: i32;
+    len: i32;
+    key_start: i32;
+    key_end: i32;
+}
+
+impl JsonScanner {
+    pub static fn new(json: str): JsonScanner {
+        return JsonScanner {
+            json: json,
+            bytes: json.bytes(),
+            pos: 0,
+            len: json.len(),
+            key_start: 0,
+            key_end: 0
+        };
+    }
+
+    pub fn is_whitespace(c: i32): bool {
+        if c == 32 { return true; }
+        if c == 9 { return true; }
+        if c == 10 { return true; }
+        if c == 13 { return true; }
+        return false;
+    }
+
+    pub fn is_number_char(c: i32): bool {
+        if c >= 48 {
+            if c <= 57 {
+                return true;
+            }
+        }
+        if c == 46 { return true; } // '.'
+        if c == 45 { return true; } // '-'
+        if c == 43 { return true; } // '+'
+        if c == 101 { return true; } // 'e'
+        if c == 69 { return true; } // 'E'
+        return false;
+    }
+
+    pub fn is_delimiter(c: i32): bool {
+        if c == 44 { return true; } // ','
+        if c == 125 { return true; } // '}'
+        if c == 93 { return true; } // ']'
+        if c == 32 { return true; } // ' '
+        if c == 9 { return true; }
+        if c == 10 { return true; }
+        if c == 13 { return true; }
+        return false;
+    }
+
+    pub fn skip_whitespace() {
+        while self.pos < self.len {
+            let c: i32 = self.bytes[self.pos];
+            if c > 32 {
+                return;
+            }
+            if c == 32 {
+                self.pos = self.pos + 1;
+            } else {
+                if c == 10 {
+                    self.pos = self.pos + 1;
+                } else {
+                    if c == 13 {
+                        self.pos = self.pos + 1;
+                    } else {
+                        if c == 9 {
+                            self.pos = self.pos + 1;
+                        } else {
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn peek_char(): i32 {
+        if self.pos >= self.len {
+            return 0 - 1;
+        }
+        return self.bytes[self.pos];
+    }
+
+    pub fn next_char(): i32 {
+        if self.pos >= self.len {
+            return 0 - 1;
+        }
+        let c: i32 = self.bytes[self.pos];
+        self.pos = self.pos + 1;
+        return c;
+    }
+
+    pub fn consume_char(expected: i32): bool {
+        self.skip_whitespace();
+        if self.pos < self.len {
+            if self.bytes[self.pos] == expected {
+                self.pos = self.pos + 1;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    pub fn consume_null(): bool {
+        self.skip_whitespace();
+        if self.pos + 4 <= self.len {
+            if self.bytes[self.pos] == 110 { // 'n'
+                if self.bytes[self.pos + 1] == 117 { // 'u'
+                    if self.bytes[self.pos + 2] == 108 { // 'l'
+                        if self.bytes[self.pos + 3] == 108 { // 'l'
+                            self.pos = self.pos + 4;
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    pub fn parse_string(): Option<str> {
+        self.skip_whitespace();
+        if self.pos >= self.len { return Option<str>::None(); }
+        if self.bytes[self.pos] != 34 { // '"'
+            return Option<str>::None();
+        }
+        let start: i32 = self.pos;
+        self.pos = self.pos + 1; // consume '"'
+        let escaped: bool = false;
+        let has_escapes: bool = false;
+        while self.pos < self.len {
+            let c: i32 = self.bytes[self.pos];
+            self.pos = self.pos + 1;
+            if escaped {
+                escaped = false;
+            } else {
+                if c == 92 { // '\'
+                    escaped = true;
+                    has_escapes = true;
+                } else {
+                    if c == 34 { // '"'
+                        let end: i32 = self.pos;
+                        if has_escapes {
+                            let quoted: str = self.json.substring(start, end);
+                            return Option<str>::Some(__fox_json_parse_string(quoted));
+                        } else {
+                            return Option<str>::Some(self.json.substring(start + 1, end - 1));
+                        }
+                    }
+                }
+            }
+        }
+        return Option<str>::None();
+    }
+
+    pub fn parse_number_str(): Option<str> {
+        self.skip_whitespace();
+        let start: i32 = self.pos;
+        while self.pos < self.len {
+            let c: i32 = self.bytes[self.pos];
+            let is_num: bool = false;
+            if c >= 48 {
+                if c <= 57 {
+                    is_num = true;
+                }
+            }
+            if c == 46 { is_num = true; } // '.'
+            if c == 45 { is_num = true; } // '-'
+            if c == 43 { is_num = true; } // '+'
+            if c == 101 { is_num = true; } // 'e'
+            if c == 69 { is_num = true; } // 'E'
+            
+            if is_num {
+                self.pos = self.pos + 1;
+            } else {
+                let check_loop_exit: bool = true;
+                if check_loop_exit {
+                    if self.pos == start {
+                        return Option<str>::None();
+                    }
+                    return Option<str>::Some(self.json.substring(start, self.pos));
+                }
+            }
+        }
+        if self.pos == start {
+            return Option<str>::None();
+        }
+        return Option<str>::Some(self.json.substring(start, self.pos));
+    }
+
+    pub fn parse_i32(): Option<i32> {
+        self.skip_whitespace();
+        if self.pos >= self.len {
+            return Option<i32>::None();
+        }
+        let sign: i32 = 1;
+        let c: i32 = self.bytes[self.pos];
+        if c == 45 { // '-'
+            sign = 0 - 1;
+            self.pos = self.pos + 1;
+        } else {
+            if c == 43 { // '+'
+                self.pos = self.pos + 1;
+            }
+        }
+        if self.pos >= self.len {
+            return Option<i32>::None();
+        }
+        let val: i32 = 0;
+        let has_digits: bool = false;
+        let loop_active: bool = true;
+        while loop_active {
+            if self.pos < self.len {
+                let ch: i32 = self.bytes[self.pos];
+                if ch >= 48 {
+                    if ch <= 57 {
+                        val = val * 10 + (ch - 48);
+                        has_digits = true;
+                        self.pos = self.pos + 1;
+                    } else {
+                        loop_active = false;
+                    }
+                } else {
+                    loop_active = false;
+                }
+            } else {
+                loop_active = false;
+            }
+        }
+        if has_digits {
+            return Option<i32>::Some(val * sign);
+        }
+        return Option<i32>::None();
+    }
+
+    pub fn parse_f64(): Option<f64> {
+        self.skip_whitespace();
+        if self.pos >= self.len {
+            return Option<f64>::None();
+        }
+        let sign: f64 = 1.0;
+        let c: i32 = self.bytes[self.pos];
+        if c == 45 { // '-'
+            sign = 0.0 - 1.0;
+            self.pos = self.pos + 1;
+        } else {
+            if c == 43 { // '+'
+                self.pos = self.pos + 1;
+            }
+        }
+        if self.pos >= self.len {
+            return Option<f64>::None();
+        }
+        
+        let val: f64 = 0.0;
+        let has_digits: bool = false;
+        let loop_active: bool = true;
+        while loop_active {
+            if self.pos < self.len {
+                let ch: i32 = self.bytes[self.pos];
+                if ch >= 48 {
+                    if ch <= 57 {
+                        let d: f64 = 0.0;
+                        if ch == 49 { d = 1.0; }
+                        if ch == 50 { d = 2.0; }
+                        if ch == 51 { d = 3.0; }
+                        if ch == 52 { d = 4.0; }
+                        if ch == 53 { d = 5.0; }
+                        if ch == 54 { d = 6.0; }
+                        if ch == 55 { d = 7.0; }
+                        if ch == 56 { d = 8.0; }
+                        if ch == 57 { d = 9.0; }
+                        val = val * 10.0 + d;
+                        has_digits = true;
+                        self.pos = self.pos + 1;
+                    } else {
+                        loop_active = false;
+                    }
+                } else {
+                    loop_active = false;
+                }
+            } else {
+                loop_active = false;
+            }
+        }
+
+        if self.pos < self.len {
+            let ch2: i32 = self.bytes[self.pos];
+            if ch2 == 46 { // '.'
+                self.pos = self.pos + 1;
+                let div: f64 = 1.0;
+                let dec_loop: bool = true;
+                while dec_loop {
+                    if self.pos < self.len {
+                        let ch: i32 = self.bytes[self.pos];
+                        if ch >= 48 {
+                            if ch <= 57 {
+                                let d: f64 = 0.0;
+                                if ch == 49 { d = 1.0; }
+                                if ch == 50 { d = 2.0; }
+                                if ch == 51 { d = 3.0; }
+                                if ch == 52 { d = 4.0; }
+                                if ch == 53 { d = 5.0; }
+                                if ch == 54 { d = 6.0; }
+                                if ch == 55 { d = 7.0; }
+                                if ch == 56 { d = 8.0; }
+                                if ch == 57 { d = 9.0; }
+                                div = div * 10.0;
+                                val = val + d / div;
+                                has_digits = true;
+                                self.pos = self.pos + 1;
+                            } else {
+                                dec_loop = false;
+                            }
+                        } else {
+                            dec_loop = false;
+                        }
+                    } else {
+                        dec_loop = false;
+                    }
+                }
+            }
+        }
+
+        // Handle exponent 'e' or 'E'
+        if self.pos < self.len {
+            let ch3: i32 = self.bytes[self.pos];
+            let is_exp: bool = false;
+            if ch3 == 101 { is_exp = true; } // 'e'
+            if ch3 == 69 { is_exp = true; } // 'E'
+            if is_exp {
+                self.pos = self.pos + 1;
+                let exp_sign: f64 = 1.0;
+                if self.pos < self.len {
+                    let ch4: i32 = self.bytes[self.pos];
+                    if ch4 == 45 { // '-'
+                        exp_sign = 0.0 - 1.0;
+                        self.pos = self.pos + 1;
+                    } else {
+                        if ch4 == 43 { // '+'
+                            self.pos = self.pos + 1;
+                        }
+                    }
+                }
+                let exp_val: f64 = 0.0;
+                let exp_loop: bool = true;
+                while exp_loop {
+                    if self.pos < self.len {
+                        let ch: i32 = self.bytes[self.pos];
+                        if ch >= 48 {
+                            if ch <= 57 {
+                                let d: f64 = 0.0;
+                                if ch == 49 { d = 1.0; }
+                                if ch == 50 { d = 2.0; }
+                                if ch == 51 { d = 3.0; }
+                                if ch == 52 { d = 4.0; }
+                                if ch == 53 { d = 5.0; }
+                                if ch == 54 { d = 6.0; }
+                                if ch == 55 { d = 7.0; }
+                                if ch == 56 { d = 8.0; }
+                                if ch == 57 { d = 9.0; }
+                                exp_val = exp_val * 10.0 + d;
+                                self.pos = self.pos + 1;
+                            } else {
+                                exp_loop = false;
+                            }
+                        } else {
+                            exp_loop = false;
+                        }
+                    } else {
+                        exp_loop = false;
+                    }
+                }
+                
+                // multiply or divide by 10^exp_val
+                let exp_factor: f64 = 1.0;
+                let exp_idx: f64 = 0.0;
+                while exp_idx < exp_val {
+                    exp_factor = exp_factor * 10.0;
+                    exp_idx = exp_idx + 1.0;
+                }
+                if exp_sign < 0.0 {
+                    val = val / exp_factor;
+                } else {
+                    val = val * exp_factor;
+                }
+            }
+        }
+
+        if has_digits {
+            return Option<f64>::Some(val * sign);
+        }
+        return Option<f64>::None();
+    }
+
+    pub fn parse_bool(): Option<bool> {
+        self.skip_whitespace();
+        if self.pos + 4 <= self.len {
+            if self.bytes[self.pos] == 116 { // 't'
+                if self.bytes[self.pos + 1] == 114 { // 'r'
+                    if self.bytes[self.pos + 2] == 117 { // 'u'
+                        if self.bytes[self.pos + 3] == 101 { // 'e'
+                            self.pos = self.pos + 4;
+                            return Option<bool>::Some(true);
+                        }
+                    }
+                }
+            }
+        }
+        if self.pos + 5 <= self.len {
+            if self.bytes[self.pos] == 102 { // 'f'
+                if self.bytes[self.pos + 1] == 97 { // 'a'
+                    if self.bytes[self.pos + 2] == 108 { // 'l'
+                        if self.bytes[self.pos + 3] == 115 { // 's'
+                            if self.bytes[self.pos + 4] == 101 { // 'e'
+                                self.pos = self.pos + 5;
+                                return Option<bool>::Some(false);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return Option<bool>::None();
+    }
+
+    pub fn next_key(): Option<bool> {
+        self.skip_whitespace();
+        if self.pos >= self.len { return Option<bool>::None(); }
+        let c: i32 = self.bytes[self.pos];
+        if c == 125 { // '}'
+            return Option<bool>::None();
+        }
+        if c == 44 { // ','
+            self.pos = self.pos + 1;
+            self.skip_whitespace();
+        }
+        if self.pos >= self.len { return Option<bool>::None(); }
+        if self.bytes[self.pos] != 34 { return Option<bool>::None(); } // '"'
+        self.pos = self.pos + 1; // consume '"'
+        self.key_start = self.pos;
+        let escaped: bool = false;
+        while self.pos < self.len {
+            let ch: i32 = self.bytes[self.pos];
+            self.pos = self.pos + 1;
+            if escaped {
+                escaped = false;
+            } else {
+                if ch == 92 { // '\'
+                    escaped = true;
+                } else {
+                    if ch == 34 { // '"'
+                        self.key_end = self.pos - 1;
+                        self.skip_whitespace();
+                        if self.pos < self.len {
+                            let c2: i32 = self.bytes[self.pos];
+                            self.pos = self.pos + 1;
+                            if c2 == 58 { // ':'
+                                return Option<bool>::Some(true);
+                            }
+                        }
+                        return Option<bool>::None();
+                    }
+                }
+            }
+        }
+        return Option<bool>::None();
+    }
+
+    pub fn skip_value(): bool {
+        self.skip_whitespace();
+        if self.pos >= self.len { return false; }
+        let c: i32 = self.bytes[self.pos];
+        if c == 123 { // '{'
+            self.pos = self.pos + 1;
+            let depth: i32 = 1;
+            while depth > 0 {
+                if self.pos < self.len {
+                    let ch: i32 = self.bytes[self.pos];
+                    self.pos = self.pos + 1;
+                    if ch == 34 { // '"'
+                        self.pos = self.pos - 1;
+                        self.parse_string();
+                    } else {
+                        if ch == 123 { // '{'
+                            depth = depth + 1;
+                        } else {
+                            if ch == 125 { // '}'
+                                depth = depth - 1;
+                            }
+                        }
+                    }
+                } else {
+                    depth = 0;
+                }
+            }
+            return true;
+        }
+        if c == 91 { // '['
+            self.pos = self.pos + 1;
+            let depth: i32 = 1;
+            while depth > 0 {
+                if self.pos < self.len {
+                    let ch: i32 = self.bytes[self.pos];
+                    self.pos = self.pos + 1;
+                    if ch == 34 { // '"'
+                        self.pos = self.pos - 1;
+                        self.parse_string();
+                    } else {
+                        if ch == 91 { // '['
+                            depth = depth + 1;
+                        } else {
+                            if ch == 93 { // ']'
+                                depth = depth - 1;
+                            }
+                        }
+                    }
+                } else {
+                    depth = 0;
+                }
+            }
+            return true;
+        }
+        if c == 34 { // '"'
+            let s_opt: Option<str> = self.parse_string();
+            match s_opt {
+                Some(s) => { return true; },
+                None() => { return false; }
+            };
+        }
+        let loop_active: bool = true;
+        while loop_active {
+            if self.pos < self.len {
+                let ch: i32 = self.bytes[self.pos];
+                if self.is_delimiter(ch) {
+                    loop_active = false;
+                } else {
+                    self.pos = self.pos + 1;
+                }
+            } else {
+                loop_active = false;
+            }
+        }
+        return true;
+    }
+
+    pub static fn string_needs_escaping(s: str): bool {
+        let bytes: []byte = s.bytes();
+        let len: i32 = s.len();
+        let i: i32 = 0;
+        while i < len {
+            let c: i32 = bytes[i];
+            if c == 34 { return true; } // '"'
+            if c == 92 { return true; } // '\'
+            if c < 32 { return true; } // control chars
+            i = i + 1;
+        }
+        return false;
+    }
+
+    pub static fn encode_string(s: str): str {
+        if JsonScanner::string_needs_escaping(s) {
+            return __fox_json_encode_string(s);
+        }
+        return "\"" + s + "\"";
+    }
+}
+
+pub compiler fn Serialize(node: StructDef, ...fields: StructFieldDef): str {
+    let out: str = "impl " + node.name + " {\n";
+    out = out + "    pub fn encode_json(): str {\n";
+    out = out + "        let json: str = \"{\";\n";
+
+    let is_first: bool = true;
+    for f in fields {
+        let json_key: str = if f.rename_to.len() > 0 { f.rename_to } else { f.name };
+        let prefix: str = if is_first { "\\\"" + json_key + "\\\":" } else { ",\\\"" + json_key + "\\\":" };
+        is_first = false;
+
+        let has_simple_expr: bool = false;
+        let val_expr: str = "";
+
+        if f.ty.eq("str") {
+            has_simple_expr = true;
+            val_expr = "json::JsonScanner::encode_string(self." + f.name + ")";
+        } else {
+            let is_int: bool = false;
+            if f.ty.eq("i32") { is_int = true; }
+            if f.ty.eq("i64") { is_int = true; }
+            if f.ty.eq("byte") { is_int = true; }
+            if is_int {
+                has_simple_expr = true;
+                if f.ty.eq("i64") {
+                    val_expr = "__fox_i64_to_str(self." + f.name + ")";
+                } else {
+                    val_expr = "__fox_i32_to_str(self." + f.name + ")";
+                }
+            } else {
+                let is_float: bool = false;
+                if f.ty.eq("f32") { is_float = true; }
+                if f.ty.eq("f64") { is_float = true; }
+                if is_float {
+                    has_simple_expr = true;
+                    val_expr = "__fox_f64_to_str(self." + f.name + ")";
+                } else {
+                    if f.ty.eq("bool") {
+                        has_simple_expr = true;
+                        val_expr = "(if self." + f.name + " { \"true\" } else { \"false\" })";
+                    }
+                }
+            }
+        }
+
+        if has_simple_expr {
+            out = out + "        json = json + \"" + prefix + "\" + " + val_expr + ";\n";
+        } else {
+            out = out + "        json = json + \"" + prefix + "\";\n";
+            if f.ty.starts_with("Option<") {
+                let inner_ty: str = f.ty.substring(7, f.ty.len() - 1);
+                let v_ser_name: str = "v_" + f.name;
+                out = out + "        json = json + (match self." + f.name + " {\n";
+                out = out + "            Some(" + v_ser_name + ") => ";
+                if inner_ty.eq("str") {
+                    out = out + "json::JsonScanner::encode_string(" + v_ser_name + ")";
+                } else {
+                    let is_inner_int: bool = false;
+                    if inner_ty.eq("i32") { is_inner_int = true; }
+                    if inner_ty.eq("i64") { is_inner_int = true; }
+                    if inner_ty.eq("byte") { is_inner_int = true; }
+                    if is_inner_int {
+                        if inner_ty.eq("i64") {
+                            out = out + "__fox_i64_to_str(" + v_ser_name + ")";
+                        } else {
+                            out = out + "__fox_i32_to_str(" + v_ser_name + ")";
+                        }
+                    } else {
+                        let is_inner_float: bool = false;
+                        if inner_ty.eq("f32") { is_inner_float = true; }
+                        if inner_ty.eq("f64") { is_inner_float = true; }
+                        if is_inner_float {
+                            out = out + "__fox_f64_to_str(" + v_ser_name + ")";
+                        } else {
+                            if inner_ty.eq("bool") {
+                                out = out + "(if " + v_ser_name + " { \"true\" } else { \"false\" })";
+                            } else {
+                                out = out + v_ser_name + ".encode_json()";
+                            }
+                        }
+                    }
+                }
+                out = out + ",\n";
+                out = out + "            None() => \"null\",\n";
+                out = out + "        });\n";
+            } else {
+                if f.ty.starts_with("[]") {
+                    let elem_ty: str = f.ty.substring(2, f.ty.len());
+                    out = out + "        json = json + \"[\";\n";
+                    out = out + "        let arr_first: bool = true;\n";
+                    out = out + "        let arr_" + f.name + ": " + f.ty + " = self." + f.name + ";\n";
+                    out = out + "        for item in arr_" + f.name + " {\n";
+                    out = out + "            if arr_first == false { json = json + \",\"; }\n";
+                    out = out + "            arr_first = false;\n";
+                    if elem_ty.eq("str") {
+                        out = out + "            json = json + json::JsonScanner::encode_string(item);\n";
+                    } else {
+                        let is_elem_int: bool = false;
+                        if elem_ty.eq("i32") { is_elem_int = true; }
+                        if elem_ty.eq("i64") { is_elem_int = true; }
+                        if elem_ty.eq("byte") { is_elem_int = true; }
+                        if is_elem_int {
+                            if elem_ty.eq("i64") {
+                                out = out + "            json = json + __fox_i64_to_str(item);\n";
+                            } else {
+                                out = out + "            json = json + __fox_i32_to_str(item);\n";
+                            }
+                        } else {
+                            let is_elem_float: bool = false;
+                            if elem_ty.eq("f32") { is_elem_float = true; }
+                            if elem_ty.eq("f64") { is_elem_float = true; }
+                            if is_elem_float {
+                                out = out + "            json = json + __fox_f64_to_str(item);\n";
+                            } else {
+                                if elem_ty.eq("bool") {
+                                    out = out + "            json = json + (if item { \"true\" } else { \"false\" });\n";
+                                } else {
+                                    out = out + "            json = json + item.encode_json();\n";
+                                }
+                            }
+                        }
+                    }
+                    out = out + "        }\n";
+                    out = out + "        json = json + \"]\";\n";
+                } else {
+                    out = out + "        json = json + self." + f.name + ".encode_json();\n";
+                }
+            }
+        }
+    }
+    out = out + "        return json + \"}\";\n";
+    out = out + "    }\n";
+    out = out + "}\n";
+    return out;
+}
+
+pub compiler fn Deserialize(node: StructDef, ...fields: StructFieldDef): str {
+    let out: str = "impl " + node.name + " {\n";
+    out = out + "    pub static fn decode_json(s: str): Option<" + node.name + "> {\n";
+    out = out + "        let scanner: json::JsonScanner = json::JsonScanner::new(s);\n";
+    out = out + "        if scanner.consume_char(123) == false { return Option<" + node.name + ">::None(); }\n";
+
+    for f in fields {
+        let def_val: str = "";
+        if f.ty.eq("str") {
+            def_val = "\"\"";
+        } else {
+            let is_int: bool = false;
+            if f.ty.eq("i32") { is_int = true; }
+            if f.ty.eq("i64") { is_int = true; }
+            if f.ty.eq("byte") { is_int = true; }
+            if is_int {
+                def_val = "0";
+            } else {
+                let is_float: bool = false;
+                if f.ty.eq("f32") { is_float = true; }
+                if f.ty.eq("f64") { is_float = true; }
+                if is_float {
+                    def_val = "0.0";
+                } else {
+                    if f.ty.eq("bool") {
+                        def_val = "false";
+                    } else {
+                        if f.ty.starts_with("Option<") {
+                            def_val = f.ty + "::None()";
+                        } else {
+                            if f.ty.starts_with("[]") {
+                                def_val = "new [0]" + f.ty.substring(2, f.ty.len());
+                            } else {
+                                def_val = "Option<" + f.ty + ">::None()";
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        out = out + "        let field_" + f.name + ": " + f.ty + " = " + def_val + ";\n";
+    }
+
+    out = out + "        let loop_active: bool = true;\n";
+    out = out + "        while loop_active {\n";
+    out = out + "            match scanner.next_key() {\n";
+    out = out + "                Some(has_key) => {\n";
+
+    for f in fields {
+        let json_key: str = if f.rename_to.len() > 0 { f.rename_to } else { f.name };
+        let key_len: i32 = json_key.len();
+
+        let indent: str = "                    ";
+        let match_cond_setup: str = "let match_" + f.name + ": bool = false;\n";
+        match_cond_setup = match_cond_setup + indent + "if scanner.key_end - scanner.key_start == " + __fox_i32_to_str(key_len) + " {\n";
+        
+        let key_idx: i32 = 0;
+        let nested_indent: str = "                        ";
+        while key_idx < key_len {
+            let char_code: i32 = json_key.char_at(key_idx);
+            match_cond_setup = match_cond_setup + nested_indent + "if scanner.bytes[scanner.key_start + " + __fox_i32_to_str(key_idx) + "] == " + __fox_i32_to_str(char_code) + " {\n";
+            nested_indent = nested_indent + "    ";
+            key_idx = key_idx + 1;
+        }
+        match_cond_setup = match_cond_setup + nested_indent + "match_" + f.name + " = true;\n";
+        
+        let close_idx: i32 = 0;
+        while close_idx <= key_len {
+            nested_indent = nested_indent.substring(0, nested_indent.len() - 4);
+            match_cond_setup = match_cond_setup + nested_indent + "}\n";
+            close_idx = close_idx + 1;
+        }
+
+        out = out + "                    " + match_cond_setup;
+    }
+
+    let else_count: i32 = 0;
+    for f in fields {
+        let val_name: str = "val_opt_" + f.name;
+        if else_count > 0 {
+            out = out + "                    else {\n";
+            out = out + "                    if match_" + f.name + " {\n";
+        } else {
+            out = out + "                    if match_" + f.name + " {\n";
+        }
+        else_count = else_count + 1;
+
+        let v_name: str = "v_" + f.name;
+        if f.ty.eq("str") {
+            out = out + "                        let " + val_name + ": Option<str> = scanner.parse_string();\n";
+            out = out + "                        match " + val_name + " {\n";
+            out = out + "                            Some(" + v_name + ") => { field_" + f.name + " = " + v_name + "; },\n";
+            out = out + "                            None() => { return Option<" + node.name + ">::None(); }\n";
+            out = out + "                        };\n";
+        } else {
+            let is_int: bool = false;
+            if f.ty.eq("i32") { is_int = true; }
+            if f.ty.eq("i64") { is_int = true; }
+            if f.ty.eq("byte") { is_int = true; }
+            if is_int {
+                out = out + "                        let " + val_name + ": Option<i32> = scanner.parse_i32();\n";
+                out = out + "                        match " + val_name + " {\n";
+                out = out + "                            Some(" + v_name + ") => { field_" + f.name + " = " + v_name + "; },\n";
+                out = out + "                            None() => { return Option<" + node.name + ">::None(); }\n";
+                out = out + "                        };\n";
+            } else {
+                let is_float: bool = false;
+                if f.ty.eq("f32") { is_float = true; }
+                if f.ty.eq("f64") { is_float = true; }
+                if is_float {
+                    out = out + "                        let " + val_name + ": Option<f64> = scanner.parse_f64();\n";
+                    out = out + "                        match " + val_name + " {\n";
+                    out = out + "                            Some(" + v_name + ") => { field_" + f.name + " = " + v_name + "; },\n";
+                    out = out + "                            None() => { return Option<" + node.name + ">::None(); }\n";
+                    out = out + "                        };\n";
+                } else {
+                    if f.ty.eq("bool") {
+                        out = out + "                        let " + val_name + ": Option<bool> = scanner.parse_bool();\n";
+                        out = out + "                        match " + val_name + " {\n";
+                        out = out + "                            Some(" + v_name + ") => { field_" + f.name + " = " + v_name + "; },\n";
+                        out = out + "                            None() => { return Option<" + node.name + ">::None(); }\n";
+                        out = out + "                        };\n";
+                    } else {
+                        if f.ty.starts_with("Option<") {
+                            let inner_ty: str = f.ty.substring(7, f.ty.len() - 1);
+                            out = out + "                        if scanner.consume_null() {\n";
+                            out = out + "                            field_" + f.name + " = " + f.ty + "::None();\n";
+                            out = out + "                        } else {\n";
+                            if inner_ty.eq("str") {
+                                out = out + "                            let " + val_name + ": Option<str> = scanner.parse_string();\n";
+                                out = out + "                            match " + val_name + " {\n";
+                                if f.ty.eq("Option<str>") {
+                                    out = out + "                                Some(" + v_name + ") => { field_" + f.name + " = Option<str>::Some(" + v_name + "); },\n";
+                                } else {
+                                    out = out + "                                Some(" + v_name + ") => { field_" + f.name + " = " + f.ty + "::Some(" + v_name + "); },\n";
+                                }
+                                out = out + "                                None() => { return Option<" + node.name + ">::None(); }\n";
+                                out = out + "                            };\n";
+                            } else {
+                                let is_inner_int: bool = false;
+                                if inner_ty.eq("i32") { is_inner_int = true; }
+                                if inner_ty.eq("i64") { is_inner_int = true; }
+                                if inner_ty.eq("byte") { is_inner_int = true; }
+                                if is_inner_int {
+                                    out = out + "                            let " + val_name + ": Option<i32> = scanner.parse_i32();\n";
+                                    out = out + "                            match " + val_name + " {\n";
+                                    out = out + "                                Some(" + v_name + ") => { field_" + f.name + " = " + f.ty + "::Some(" + v_name + "); },\n";
+                                    out = out + "                                None() => { return Option<" + node.name + ">::None(); }\n";
+                                    out = out + "                            };\n";
+                                } else {
+                                    let is_inner_float: bool = false;
+                                    if inner_ty.eq("f32") { is_inner_float = true; }
+                                    if inner_ty.eq("f64") { is_inner_float = true; }
+                                    if is_inner_float {
+                                        out = out + "                            let " + val_name + ": Option<f64> = scanner.parse_f64();\n";
+                                        out = out + "                            match " + val_name + " {\n";
+                                        out = out + "                                Some(" + v_name + ") => { field_" + f.name + " = " + f.ty + "::Some(" + v_name + "); },\n";
+                                        out = out + "                                None() => { return Option<" + node.name + ">::None(); }\n";
+                                        out = out + "                            };\n";
+                                    } else {
+                                        if inner_ty.eq("bool") {
+                                            out = out + "                            let " + val_name + ": Option<bool> = scanner.parse_bool();\n";
+                                            out = out + "                            match " + val_name + " {\n";
+                                            out = out + "                                Some(" + v_name + ") => { field_" + f.name + " = " + f.ty + "::Some(" + v_name + "); },\n";
+                                            out = out + "                                None() => { return Option<" + node.name + ">::None(); }\n";
+                                            out = out + "                            };\n";
+                                        } else {
+                                            out = out + "                            let nested_start: i32 = scanner.pos;\n";
+                                            out = out + "                            scanner.skip_value();\n";
+                                            out = out + "                            let nested_str: str = scanner.json.substring(nested_start, scanner.pos);\n";
+                                            out = out + "                            let parsed_opt: Option<" + inner_ty + "> = " + inner_ty + "::decode_json(nested_str);\n";
+                                            out = out + "                            match parsed_opt {\n";
+                                            out = out + "                                Some(" + v_name + ") => { field_" + f.name + " = " + f.ty + "::Some(" + v_name + "); },\n";
+                                            out = out + "                                None() => { return Option<" + node.name + ">::None(); }\n";
+                                            out = out + "                            };\n";
+                                        }
+                                    }
+                                }
+                            }
+                            out = out + "                        }\n";
+                        } else {
+                            if f.ty.starts_with("[]") {
+                                let elem_ty: str = f.ty.substring(2, f.ty.len());
+                                out = out + "                        scanner.skip_whitespace();\n";
+                                out = out + "                        if scanner.consume_char(91) == false { return Option<" + node.name + ">::None(); }\n";
+                                out = out + "                        let list: Vec<" + elem_ty + "> = Vec<" + elem_ty + ">::new();\n";
+                                out = out + "                        scanner.skip_whitespace();\n";
+                                out = out + "                        if scanner.consume_char(93) == false {\n";
+                                out = out + "                            let list_active: bool = true;\n";
+                                out = out + "                            while list_active {\n";
+                                if elem_ty.eq("str") {
+                                    out = out + "                                let item_opt: Option<str> = scanner.parse_string();\n";
+                                    out = out + "                                match item_opt {\n";
+                                    out = out + "                                    Some(item_v) => { list.push(item_v); },\n";
+                                    out = out + "                                    None() => { return Option<" + node.name + ">::None(); }\n";
+                                    out = out + "                                };\n";
+                                } else {
+                                    let is_elem_int: bool = false;
+                                    if elem_ty.eq("i32") { is_elem_int = true; }
+                                    if elem_ty.eq("i64") { is_elem_int = true; }
+                                    if elem_ty.eq("byte") { is_elem_int = true; }
+                                    if is_elem_int {
+                                        out = out + "                                let item_opt: Option<i32> = scanner.parse_i32();\n";
+                                        out = out + "                                match item_opt {\n";
+                                        out = out + "                                    Some(item_v) => { list.push(item_v); },\n";
+                                        out = out + "                                    None() => { return Option<" + node.name + ">::None(); }\n";
+                                        out = out + "                                };\n";
+                                    } else {
+                                        let is_elem_float: bool = false;
+                                        if elem_ty.eq("f32") { is_elem_float = true; }
+                                        if elem_ty.eq("f64") { is_elem_float = true; }
+                                        if is_elem_float {
+                                            out = out + "                                let item_opt: Option<f64> = scanner.parse_f64();\n";
+                                            out = out + "                                match item_opt {\n";
+                                            out = out + "                                    Some(item_v) => { list.push(item_v); },\n";
+                                            out = out + "                                    None() => { return Option<" + node.name + ">::None(); }\n";
+                                            out = out + "                                };\n";
+                                        } else {
+                                            if elem_ty.eq("bool") {
+                                                out = out + "                                let item_opt: Option<bool> = scanner.parse_bool();\n";
+                                                out = out + "                                match item_opt {\n";
+                                                out = out + "                                    Some(item_v) => { list.push(item_v); },\n";
+                                                out = out + "                                    None() => { return Option<" + node.name + ">::None(); }\n";
+                                                out = out + "                                };\n";
+                                            } else {
+                                                out = out + "                                let nested_start: i32 = scanner.pos;\n";
+                                                out = out + "                                scanner.skip_value();\n";
+                                                out = out + "                                let nested_str: str = scanner.json.substring(nested_start, scanner.pos);\n";
+                                                out = out + "                                let parsed_opt: Option<" + elem_ty + "> = " + elem_ty + "::decode_json(nested_str);\n";
+                                                out = out + "                                match parsed_opt {\n";
+                                                out = out + "                                    Some(item_v) => { list.push(item_v); },\n";
+                                                out = out + "                                    None() => { return Option<" + node.name + ">::None(); }\n";
+                                                out = out + "                                };\n";
+                                            }
+                                        }
+                                    }
+                                }
+                                out = out + "                                scanner.skip_whitespace();\n";
+                                out = out + "                                if scanner.consume_char(44) {\n";
+                                out = out + "                                    // continue\n";
+                                out = out + "                                } else {\n";
+                                out = out + "                                    if scanner.consume_char(93) {\n";
+                                out = out + "                                        list_active = false;\n";
+                                out = out + "                                    } else {\n";
+                                out = out + "                                        return Option<" + node.name + ">::None();\n";
+                                out = out + "                                    }\n";
+                                out = out + "                                }\n";
+                                out = out + "                            }\n";
+                                out = out + "                        }\n";
+                                out = out + "                        let arr: " + f.ty + " = new [list.len()]" + elem_ty + ";\n";
+                                out = out + "                        let idx: i32 = 0;\n";
+                                out = out + "                        while idx < list.len() {\n";
+                                out = out + "                            match list.get(idx) {\n";
+                                out = out + "                                Some(get_v) => { arr[idx] = get_v; },\n";
+                                out = out + "                                None() => {}\n";
+                                out = out + "                            };\n";
+                                out = out + "                            idx = idx + 1;\n";
+                                out = out + "                        }\n";
+                                out = out + "                        field_" + f.name + " = arr;\n";
+                            } else {
+                                out = out + "                        let nested_start: i32 = scanner.pos;\n";
+                                out = out + "                        scanner.skip_value();\n";
+                                out = out + "                        let nested_str: str = scanner.json.substring(nested_start, scanner.pos);\n";
+                                out = out + "                        let parsed_opt: Option<" + f.ty + "> = " + f.ty + "::decode_json(nested_str);\n";
+                                out = out + "                        match parsed_opt {\n";
+                                out = out + "                            Some(" + v_name + ") => { field_" + f.name + " = " + v_name + "; },\n";
+                                out = out + "                            None() => { return Option<" + node.name + ">::None(); }\n";
+                                out = out + "                        };\n";
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        out = out + "                    }\n";
+    }
+
+    if else_count > 0 {
+        if else_count > 1 {
+            out = out + "                    else {\n";
+            out = out + "                        scanner.skip_value();\n";
+            out = out + "                    }\n";
+            let close_idx: i32 = 1;
+            while close_idx < else_count {
+                out = out + "                    }\n";
+                close_idx = close_idx + 1;
+            }
+        } else {
+            out = out + "                    else {\n";
+            out = out + "                        scanner.skip_value();\n";
+            out = out + "                    }\n";
+        }
+    } else {
+        out = out + "                    scanner.skip_value();\n";
+    }
+
+    out = out + "                },\n";
+    out = out + "                None() => { loop_active = false; }\n";
+    out = out + "            };\n";
+    out = out + "        }\n";
+
+    out = out + "        if scanner.consume_char(125) == false { return Option<" + node.name + ">::None(); }\n";
+    out = out + "        return Option<" + node.name + ">::Some(" + node.name + " {\n";
+    let is_first_init: bool = true;
+    for f in fields {
+        if is_first_init == false {
+            out = out + ",\n";
+        }
+        is_first_init = false;
+        out = out + "            " + f.name + ": field_" + f.name;
+    }
+    out = out + "\n        });\n";
+    out = out + "    }\n";
+    out = out + "}\n";
+    return out;
+}
+
+pub compiler fn Rename(node: StructDef, ...fields: StructFieldDef): str {
+    return "";
+}

@@ -1,0 +1,10 @@
+extern fn __fox_dom_performance_now(): f64;
+
+pub struct Performance {
+}
+
+impl Performance {
+    pub static fn now(): f64 {
+        return __fox_dom_performance_now();
+    }
+}

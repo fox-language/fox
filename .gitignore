@@ -1,0 +1,6 @@
+/target
+node_modules
+/.fox-tests
+/.fox-benchs
+/benchmarks/**/target
+*.vsix

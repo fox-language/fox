@@ -1,0 +1,29 @@
+use std::testing::{assert_eq};
+
+let mut_global: i32 = 10;
+pub let pub_mut_global: i32 = 20;
+const CONST_GLOBAL: i32 = 30;
+let complex_global: i32 = get_val();
+
+fn get_val(): i32 {
+    return 42;
+}
+
+pub fn test_global_let() {
+    assert_eq(mut_global, 10);
+    assert_eq(pub_mut_global, 20);
+    assert_eq(CONST_GLOBAL, 30);
+    assert_eq(complex_global, 42);
+    
+    mut_global = 15;
+    assert_eq(mut_global, 15);
+    
+    pub_mut_global = 25;
+    assert_eq(pub_mut_global, 25);
+}
+
+pub fn test_global_let_ops() {
+    mut_global = 100;
+    mut_global += 5;
+    assert_eq(mut_global, 105);
+}

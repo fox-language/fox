@@ -1,0 +1,24 @@
+pub fn bench_string_ops(): i32 {
+    let s: str = "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.";
+    let sum: i32 = 0;
+    let i: i32 = 0;
+    while i < 100 {
+        if s.starts_with("Lorem") {
+            sum = sum + 1;
+        }
+        if s.ends_with("consequat.") {
+            sum = sum + 2;
+        }
+        if s.contains("tempor") {
+            sum = sum + 3;
+        }
+        let idx: i32 = s.index_of("adipiscing");
+        sum = sum + idx;
+        
+        let last_idx: i32 = s.last_index_of("ut");
+        sum = sum + last_idx;
+        
+        i = i + 1;
+    }
+    return sum;
+}

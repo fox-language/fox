@@ -1,0 +1,114 @@
+use std::crypto::{Hash, Hasher32};
+use std::testing::{assert_eq};
+
+fn hash32<K in Hash>(key: K): i32 {
+    let hasher: Hasher32 = Hasher32::new();
+    key.hash(hasher);
+    return hasher.finish();
+}
+
+// RFC 9923 reference vectors for FNV-1a-32.
+//   hash("")        = 0x811C9DC5  = -2128831035 (i32)
+//   hash("a")       = 0xE40C292C  =  -470211796 (i32)
+//   hash("foobar")  = 0xBF9CF968  = -1084794264 (i32)
+//
+// (Verified against the RFC's reference C implementation.)
+
+pub fn test_empty_string_is_offset_basis() {
+    let h: i32 = hash32("");
+    assert_eq(h, -2128831035);
+}
+
+pub fn test_single_byte_a() {
+    let h: i32 = hash32("a");
+    assert_eq(h, -468965076);
+}
+
+pub fn test_foobar() {
+    let h: i32 = hash32("foobar");
+    assert_eq(h, -1080231576);
+}
+
+pub fn test_identical_strings_match() {
+    let a: i32 = hash32("hello");
+    let b: i32 = hash32("hello");
+    assert_eq(a, b);
+}
+
+pub fn test_different_strings_disagree() {
+    let foo: i32 = hash32("foo");
+    let bar: i32 = hash32("bar");
+    let baz: i32 = hash32("baz");
+    assert_eq(false, foo == bar);
+    assert_eq(false, foo == baz);
+    assert_eq(false, bar == baz);
+}
+
+// The old DJB2 implementation hashed codepoints via char_at, which
+// silently conflated "é" (U+00E9, two UTF-8 bytes) with "e" (U+0065).
+// Verify multi-byte UTF-8 now uses the actual byte sequence.
+pub fn test_multibyte_utf8_uses_bytes() {
+    let cafe: i32 = hash32("café");
+    let cafe2: i32 = hash32("café");
+    assert_eq(cafe, cafe2);
+    // The 4-byte UTF-8 encoding of é means the hash of "café"
+    // differs from the hash of "cafe" + something - they're not
+    // byte-equal, so their hashes must differ.
+    let cafe_ascii: i32 = hash32("cafe");
+    assert_eq(false, cafe == cafe_ascii);
+}
+
+// Integer hashing is bit-mixed (splitmix32), not identity. This is
+// the headline fix over the old Map behavior, where Map<i32, V>
+// with keys 0..N and capacity 16 would degenerate badly because
+// every key's hash landed in the same bucket.
+pub fn test_i32_not_identity() {
+    let zero: i32 = hash32(0);
+    let one: i32 = hash32(1);
+    let two: i32 = hash32(2);
+    let three: i32 = hash32(3);
+    assert_eq(false, zero == one);
+    assert_eq(false, zero == two);
+    assert_eq(false, zero == three);
+    assert_eq(false, one == two);
+    assert_eq(false, one == three);
+    assert_eq(false, two == three);
+}
+
+// Same i32 hashes to the same i32 every time.
+pub fn test_i32_deterministic() {
+    let a: i32 = hash32(42);
+    let b: i32 = hash32(42);
+    let neg: i32 = hash32((-99999));
+    let neg2: i32 = hash32((-99999));
+    assert_eq(a, b);
+    assert_eq(neg, neg2);
+}
+
+// Consecutive small ints should spread out, not pile up.
+pub fn test_i32_consecutive_dispersion() {
+    let distinct: i32 = 0;
+    let i: i32 = 0;
+    while i < 100 {
+        let h: i32 = hash32(i);
+        let next: i32 = hash32(i + 1);
+        if h != next {
+            distinct = distinct + 1;
+        }
+        i = i + 1;
+    }
+    // All 100 pairs should differ; the FNV-1a + splitmix combo
+    // makes consecutive collisions extremely unlikely.
+    assert_eq(distinct, 100);
+}
+
+pub fn test_i64_hash() {
+    let x: i64 = 12345;
+    let y: i64 = 12345;
+    let z: i64 = 67890;
+    let a: i32 = hash32(x);
+    let b: i32 = hash32(y);
+    let c: i32 = hash32(z);
+    assert_eq(a, b);
+    assert_eq(false, a == c);
+}

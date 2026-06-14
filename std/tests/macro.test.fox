@@ -1,0 +1,16 @@
+use std::testing::{assert_eq};
+use std::macros::{StructDef, StructFieldDef};
+
+compiler fn testmacro(node: StructDef, ...fields: StructFieldDef): str {
+    let impl_str: str = "impl " + node.name + " {\n";
+    impl_str = impl_str + "    pub static fn get_magic_number(): i32 { return 42; }\n";
+    impl_str = impl_str + "}\n";
+    return impl_str;
+}
+
+#[testmacro]
+struct MyMacroStruct {}
+
+pub fn test_macro_generation() {
+    assert_eq(MyMacroStruct::get_magic_number(), 42);
+}

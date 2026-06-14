@@ -1,0 +1,110 @@
+// std::math::rand - Pseudo-random number generation utilities.
+//
+// This module provides PSEUDO-RANDOM numbers using xorshift algorithms.
+// These are NOT cryptographically secure and should NOT be used for
+// security-sensitive purposes (passwords, tokens, encryption, secure IDs, etc.).
+//
+// For cryptographic randomness, use the host platform's secure random APIs
+// (e.g., crypto.getRandomValues in browsers, or /dev/urandom on Unix systems).
+//
+// Uses xorshift-based PRNG for fast, statistically decent randomness suitable for:
+//   - Simulations
+//   - Games
+//   - Testing and fuzzing
+//   - Procedural generation
+//   - Load balancing
+//
+// Supported types:
+//   - i32: 32-bit signed integers
+//   - i64: 64-bit signed integers
+//   - bool: Random boolean values
+//
+// Example usage:
+//   use std::math;
+//   
+//   // Create a new RNG (uses default seed)
+//   let rng: Rng = Rng::new();
+//   let n: i32 = rng.next_i32();
+//   
+//   // Or create a seeded RNG for reproducible sequences
+//   let rng2: Rng = Rng::with_seed(42, 42);
+//   let n2: i32 = rng2.next_i32();
+
+pub struct Rng {
+    state_i32: i32;
+    state_i64: i64;
+}
+
+impl Rng {
+    // Create a new RNG with the default seed.
+    pub static fn new(): Rng {
+        return Rng {
+            state_i32: 123456789,
+            state_i64: 123456789,
+        };
+    }
+
+    // Create a new RNG with custom seeds.
+    // Use this for reproducible sequences.
+    pub static fn with_seed(seed_i32: i32, seed_i64: i64): Rng {
+        let s32: i32 = seed_i32;
+        let s64: i64 = seed_i64;
+        if s32 == 0 { s32 = 123456789; }
+        if s64 == 0 { s64 = 123456789; }
+        return Rng {
+            state_i32: s32,
+            state_i64: s64,
+        };
+    }
+
+    // Generate a random i32 using xorshift32.
+    pub fn next_i32(): i32 {
+        let x: i32 = self.state_i32;
+        x = x ^ (x << 13);
+        x = x ^ (x >> 17);
+        x = x ^ (x << 5);
+        self.state_i32 = x;
+        return x;
+    }
+
+    // Generate a random i64 using xorshift64.
+    pub fn next_i64(): i64 {
+        let x: i64 = self.state_i64;
+        x = x ^ (x << 13);
+        x = x ^ (x >> 7);
+        x = x ^ (x << 17);
+        self.state_i64 = x;
+        return x;
+    }
+
+    // Generate a random i32 in the range [min, max).
+    pub fn next_i32_range(min: i32, max: i32): i32 {
+        if min >= max {
+            return min;
+        }
+        let range: i32 = max - min;
+        let r: i32 = self.next_i32() % range;
+        if r < 0 {
+            r = -r;
+        }
+        return min + r;
+    }
+
+    // Generate a random i64 in the range [min, max).
+    pub fn next_i64_range(min: i64, max: i64): i64 {
+        if min >= max {
+            return min;
+        }
+        let range: i64 = max - min;
+        let r: i64 = self.next_i64() % range;
+        if r < 0 {
+            r = -r;
+        }
+        return min + r;
+    }
+
+    // Generate a random boolean.
+    pub fn next_bool(): bool {
+        return (self.next_i32() % 2) == 0;
+    }
+}

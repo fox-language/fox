@@ -1,0 +1,230 @@
+pub const PI: f64 = 3.141592653589793;
+pub const E: f64 = 2.718281828459045;
+pub const LN2: f64 = 0.6931471805599453;
+pub const LN10: f64 = 2.302585092994046;
+
+const PI_DIV_2: f64 = PI / 2.0;
+const TAU: f64 = 2.0 * PI;
+const PRECISION_LIMIT: f64 = 4503599627370496.0;
+
+pub fn round(x: f64): f64 {
+    if x < 0.0 {
+        return 0.0 - round(0.0 - x);
+    }
+    if x >= PRECISION_LIMIT {
+        return x;
+    }
+    let c: f64 = PRECISION_LIMIT;
+    return (x + c) - c;
+}
+
+pub fn sin(x: f64): f64 {
+    let p2: f64 = TAU;
+    let x_reduced: f64 = x - (p2 * (x / p2).floor());
+    if x_reduced > PI {
+        x_reduced = x_reduced - p2;
+    }
+    let x2: f64 = x_reduced * x_reduced;
+    let res: f64 = 0.0 - 0.000000000000000008220635246624329;
+    res = res * x2 + 0.000000000000002811457254345521;
+    res = res * x2 - 0.0000000000007647163731819816;
+    res = res * x2 + 0.00000000016059043836821613;
+    res = res * x2 - 0.00000002505210838544172;
+    res = res * x2 + 0.0000027557319223985893;
+    res = res * x2 - 0.0001984126984126984;
+    res = res * x2 + 0.008333333333333333;
+    res = res * x2 - 0.16666666666666666;
+    res = res * x2 + 1.0;
+    return x_reduced * res;
+}
+
+pub fn cos(x: f64): f64 {
+    return sin(x + PI_DIV_2);
+}
+
+pub fn tan(x: f64): f64 {
+    return sin(x) / cos(x);
+}
+
+pub fn exp(x: f64): f64 {
+    let ln2: f64 = LN2;
+    let n_float: f64 = round(x / ln2);
+    let r: f64 = x - (n_float * ln2);
+    let sum: f64 = 0.000000000011470745597729725;
+    sum = sum * r + 0.00000000016059043836821613;
+    sum = sum * r + 0.00000000208767569878681;
+    sum = sum * r + 0.00000002505210838544172;
+    sum = sum * r + 0.00000027557319223985893;
+    sum = sum * r + 0.0000027557319223985893;
+    sum = sum * r + 0.000024801587301587303;
+    sum = sum * r + 0.0001984126984126984;
+    sum = sum * r + 0.001388888888888889;
+    sum = sum * r + 0.008333333333333333;
+    sum = sum * r + 0.041666666666666664;
+    sum = sum * r + 0.16666666666666666;
+    sum = sum * r + 0.5;
+    sum = sum * r + 1.0;
+    sum = sum * r + 1.0;
+    let factor: f64 = 1.0;
+    if n_float > 0.0 {
+        let j: f64 = 0.0;
+        while j < n_float {
+            factor = factor * 2.0;
+            j = j + 1.0;
+        }
+    }
+    if n_float < 0.0 {
+        let j: f64 = 0.0;
+        let limit: f64 = 0.0 - n_float;
+        while j < limit {
+            factor = factor / 2.0;
+            j = j + 1.0;
+        }
+    }
+    return sum * factor;
+}
+
+pub fn log(x: f64): f64 {
+    if x <= 0.0 {
+        return 0.0 - 1.0;
+    }
+    let k: f64 = 0.0;
+    let m: f64 = x;
+    while m >= 1.0 {
+        m = m / 2.0;
+        k = k + 1.0;
+    }
+    while m < 0.5 {
+        m = m * 2.0;
+        k = k - 1.0;
+    }
+    let y: f64 = (m - 1.0) / (m + 1.0);
+    let y2: f64 = y * y;
+    let res: f64 = 0.034482758620689655;
+    res = res * y2 + 0.037037037037037035;
+    res = res * y2 + 0.04;
+    res = res * y2 + 0.043478260869565216;
+    res = res * y2 + 0.047619047619047616;
+    res = res * y2 + 0.05263157894736842;
+    res = res * y2 + 0.058823529411764705;
+    res = res * y2 + 0.06666666666666667;
+    res = res * y2 + 0.07692307692307693;
+    res = res * y2 + 0.09090909090909091;
+    res = res * y2 + 0.1111111111111111;
+    res = res * y2 + 0.14285714285714285;
+    res = res * y2 + 0.2;
+    res = res * y2 + 0.3333333333333333;
+    res = res * y2 + 1.0;
+    let ln_m: f64 = 2.0 * y * res;
+    return ln_m + (k * LN2);
+}
+
+pub fn log10(x: f64): f64 {
+    return log(x) / LN10;
+}
+
+pub fn log2(x: f64): f64 {
+    return log(x) / LN2;
+}
+
+fn atan_h(x: f64): f64 {
+    let x2: f64 = x * x;
+    let f: f64 = 29.0;
+    f = 27.0 + (196.0 * x2 / f);
+    f = 25.0 + (169.0 * x2 / f);
+    f = 23.0 + (144.0 * x2 / f);
+    f = 21.0 + (121.0 * x2 / f);
+    f = 19.0 + (100.0 * x2 / f);
+    f = 17.0 + (81.0 * x2 / f);
+    f = 15.0 + (64.0 * x2 / f);
+    f = 13.0 + (49.0 * x2 / f);
+    f = 11.0 + (36.0 * x2 / f);
+    f = 9.0 + (25.0 * x2 / f);
+    f = 7.0 + (16.0 * x2 / f);
+    f = 5.0 + (9.0 * x2 / f);
+    f = 3.0 + (4.0 * x2 / f);
+    f = 1.0 + (x2 / f);
+    return x / f;
+}
+
+pub fn atan(x: f64): f64 {
+    if x > 1.0 {
+        return PI_DIV_2 - atan_h(1.0 / x);
+    }
+    if x < (0.0 - 1.0) {
+        return (0.0 - PI_DIV_2) - atan_h(1.0 / x);
+    }
+    return atan_h(x);
+}
+
+pub fn atan2(y: f64, x: f64): f64 {
+    if x > 0.0 {
+        return atan(y / x);
+    }
+    if x < 0.0 {
+        if y >= 0.0 {
+            return atan(y / x) + PI;
+        }
+        return atan(y / x) - PI;
+    }
+    if y > 0.0 {
+        return PI_DIV_2;
+    }
+    if y < 0.0 {
+        return 0.0 - PI_DIV_2;
+    }
+    return 0.0;
+}
+
+pub fn asin(x: f64): f64 {
+    if x == 1.0 {
+        return PI_DIV_2;
+    }
+    if x == (0.0 - 1.0) {
+        return 0.0 - PI_DIV_2;
+    }
+    return atan(x / (1.0 - (x * x)).sqrt());
+}
+
+pub fn acos(x: f64): f64 {
+    return PI_DIV_2 - asin(x);
+}
+
+pub fn pow(base: f64, exponent: f64): f64 {
+    if base == 0.0 {
+        if exponent == 0.0 {
+            return 1.0;
+        }
+        return 0.0;
+    }
+    if base < 0.0 {
+        let is_int: bool = false;
+        if round(exponent) == exponent {
+            is_int = true;
+        }
+        if is_int {
+            let res: f64 = exp(exponent * log(0.0 - base));
+            let rem: f64 = exponent - (2.0 * (exponent / 2.0).floor());
+            if rem != 0.0 {
+                return 0.0 - res;
+            }
+            return res;
+        }
+        return 0.0 - 1.0;
+    }
+    return exp(exponent * log(base));
+}
+
+pub fn sinh(x: f64): f64 {
+    return (exp(x) - exp(0.0 - x)) / 2.0;
+}
+
+pub fn cosh(x: f64): f64 {
+    return (exp(x) + exp(0.0 - x)) / 2.0;
+}
+
+pub fn tanh(x: f64): f64 {
+    let ep: f64 = exp(x);
+    let em: f64 = exp(0.0 - x);
+    return (ep - em) / (ep + em);
+}

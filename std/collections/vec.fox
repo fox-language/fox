@@ -1,0 +1,96 @@
+use std::collections::{Option};
+
+pub struct Vec<T> {
+    data: []T;
+    len: i32;
+    cap: i32;
+}
+
+impl<T> Vec<T> {
+    pub static fn new(): Vec<T> {
+        return Vec<T> { data: new [0]T, len: 0, cap: 0 };
+    }
+
+    pub static fn with_len(l: i32): Vec<T> {
+        return Vec<T> { data: new [l]T, len: l, cap: l };
+    }
+
+    pub static fn with_cap(c: i32): Vec<T> {
+        return Vec<T> { data: new [c]T, len: 0, cap: c };
+    }
+
+    pub fn grow(ncap: i32) {
+        if ncap <= self.cap {
+            return;
+        }
+        let new_data: []T = new [ncap]T;
+        new_data.copy_from(0, self.data, 0, self.len);
+        self.data = new_data;
+        self.cap = ncap;
+    }
+
+    pub fn push(val: T) {
+        if self.len >= self.cap {
+            let ncap: i32 = self.cap * 2;
+            if ncap <= 4 {
+                ncap = 4;
+            }
+            self.grow(ncap);
+        }
+        self.data[self.len] = val;
+        self.len = self.len + 1;
+    }
+
+    pub fn pop(): Option<T> {
+        if self.len <= 0 {
+            return Option<T>::None();
+        }
+        self.len = self.len - 1;
+        return Option<T>::Some(self.data[self.len]);
+    }
+
+    pub fn get(i: i32): Option<T> {
+        if i < 0 {
+            return Option<T>::None();
+        }
+        if i >= self.len {
+            return Option<T>::None();
+        }
+        return Option<T>::Some(self.data[i]);
+    }
+
+    pub fn set(i: i32, val: T) {
+        self.data[i] = val;
+    }
+
+    pub fn clear() {
+        self.data = new [0]T;
+        self.len = 0;
+        self.cap = 0;
+    }
+
+    pub fn len(): i32 {
+        return self.len;
+    }
+
+    pub fn iter(): VecIterator<T> {
+        return VecIterator<T> { vec: self, index: 0 };
+    }
+}
+
+pub struct VecIterator<T> {
+    vec: Vec<T>;
+    index: i32;
+}
+
+impl<T> VecIterator<T> {
+    pub fn next(): Option<T> {
+        if self.index >= self.vec.len() {
+            return Option<T>::None();
+        }
+        let val: Option<T> = self.vec.get(self.index);
+        self.index = self.index + 1;
+        return val;
+    }
+}
+

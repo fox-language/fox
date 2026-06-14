@@ -1,0 +1,24 @@
+extern fn __fox_async_yield();
+extern fn __fox_async_sleep(ms: i32);
+extern fn __fox_queue_task(f: ());
+
+pub fn fox_run_task(f: ()) {
+    f();
+}
+
+pub struct Task {
+}
+
+impl Task {
+    pub static fn yield_now() {
+        __fox_async_yield();
+    }
+
+    pub static fn sleep(ms: i32) {
+        __fox_async_sleep(ms);
+    }
+
+    pub static fn queue(f: ()) {
+        __fox_queue_task(f);
+    }
+}

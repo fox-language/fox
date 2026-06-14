@@ -1,0 +1,39 @@
+use std::fmt::{sprintf};
+
+extern fn __fox_dom_console(level: i32, msg: str);
+
+pub struct Console {
+}
+
+impl Console {
+    pub static fn log(msg: str) {
+        __fox_dom_console(1, msg);
+    }
+    pub static fn info(msg: str) {
+        __fox_dom_console(2, msg);
+    }
+    pub static fn warn(msg: str) {
+        __fox_dom_console(3, msg);
+    }
+    pub static fn error(msg: str) {
+        __fox_dom_console(4, msg);
+    }
+    pub static fn debug(msg: str) {
+        __fox_dom_console(5, msg);
+    }
+    pub static fn logf(fmt: str, ...args: anyref) {
+        __fox_dom_console(1, sprintf(fmt, ...args));
+    }
+    pub static fn infof(fmt: str, ...args: anyref) {
+        __fox_dom_console(2, sprintf(fmt, ...args));
+    }
+    pub static fn warnf(fmt: str, ...args: anyref) {
+        __fox_dom_console(3, sprintf(fmt, ...args));
+    }
+    pub static fn errorf(fmt: str, ...args: anyref) {
+        __fox_dom_console(4, sprintf(fmt, ...args));
+    }
+    pub static fn debugf(fmt: str, ...args: anyref) {
+        __fox_dom_console(5, sprintf(fmt, ...args));
+    }
+}

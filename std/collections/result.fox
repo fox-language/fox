@@ -1,0 +1,14 @@
+pub enum Result<T, E> {
+    Ok(T);
+    Err(E);
+}
+
+impl<T, E> Result<T, E> {
+    pub static fn ok(val: T): Result<T, E> {
+        return Result<T, E>::Ok(val);
+    }
+
+    pub static fn err(err: E): Result<T, E> {
+        return Result<T, E>::Err(err);
+    }
+}

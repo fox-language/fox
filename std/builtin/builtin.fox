@@ -1,0 +1,68 @@
+// std::builtin - Inherent methods for builtin types.
+//
+// Every method on a builtin type (`str`, `f64`, `f32`, `i32`, `i64`, `[]T`)
+// is declared here as a `pub compiler fn` whose body is provided by the
+// host or emitted directly as a Wasm instruction.
+//
+// To add a new method, append a `pub compiler fn` to the matching
+// `impl <Type> { ... }` block, then add a corresponding entry to
+// `lookup_builtin_intrinsic` in `src/codegen.rs`.
+//
+// Two kinds of bodies are supported:
+//
+//   1. A single Wasm opcode (e.g. `f64.abs`, `array.len`). The codegen
+//      emits the opcode in place of a call.
+//   2. A Wasm import (e.g. `wasm:js-string.length`, `env.__fox_str_*`).
+//      The codegen emits an `import` declaration and a `call`.
+
+impl str {
+    pub compiler fn len(): i32;
+    pub compiler fn char_at(index: i32): i32;
+    pub compiler fn bytes(): []byte;
+    pub compiler fn starts_with(prefix: str): bool;
+    pub compiler fn ends_with(suffix: str): bool;
+    pub compiler fn contains(substr: str): bool;
+    pub compiler fn index_of(substr: str): i32;
+    pub compiler fn last_index_of(substr: str): i32;
+    pub compiler fn is_empty(): bool;
+    pub compiler fn eq(other: str): bool;
+    pub compiler fn join(other: str): str;
+    pub compiler fn compare(other: str): i32;
+    pub compiler fn substring(start: i32, end: i32): str;
+}
+
+impl f64 {
+    pub compiler fn abs(): f64;
+    pub compiler fn sqrt(): f64;
+    pub compiler fn ceil(): f64;
+    pub compiler fn floor(): f64;
+    pub compiler fn trunc(): f64;
+    pub compiler fn min(other: f64): f64;
+    pub compiler fn max(other: f64): f64;
+}
+
+impl f32 {
+    pub compiler fn abs(): f32;
+    pub compiler fn sqrt(): f32;
+    pub compiler fn ceil(): f32;
+    pub compiler fn floor(): f32;
+    pub compiler fn trunc(): f32;
+    pub compiler fn min(other: f32): f32;
+    pub compiler fn max(other: f32): f32;
+}
+
+impl i32 {
+    pub compiler fn abs(): i32;
+    pub compiler fn min(other: i32): i32;
+    pub compiler fn max(other: i32): i32;
+}
+
+impl i64 {
+    pub compiler fn abs(): i64;
+    pub compiler fn min(other: i64): i64;
+    pub compiler fn max(other: i64): i64;
+}
+
+impl<T> []T {
+    pub compiler fn len(): i32;
+}

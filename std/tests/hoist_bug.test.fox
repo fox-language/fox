@@ -1,0 +1,23 @@
+use std::testing::{assert_eq};
+
+pub fn test_hoist_bug_while() {
+    let s: str = "6";
+    while s.len() < 2 {
+        s = "0" + s;
+        if s.len() > 5 {
+            assert_eq(true, false);
+            return;
+        }
+    }
+    assert_eq(s, "06");
+}
+
+pub fn test_normal_hoist_while() {
+    let s: str = "6";
+    let other: str = "123";
+    let count: i32 = 0;
+    while count < other.len() {
+        count = count + 1;
+    }
+    assert_eq(count, 3);
+}

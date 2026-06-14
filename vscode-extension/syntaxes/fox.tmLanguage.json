@@ -1,0 +1,305 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Fox",
+  "scopeName": "source.fox",
+  "fileTypes": ["fox"],
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#strings" },
+    { "include": "#numbers" },
+    { "include": "#constants" },
+    { "include": "#use-stmt" },
+    { "include": "#extern-fn" },
+    { "include": "#function-decl" },
+    { "include": "#struct-decl" },
+    { "include": "#enum-decl" },
+    { "include": "#trait-decl" },
+    { "include": "#impl-decl" },
+    { "include": "#let-decl" },
+    { "include": "#const-decl" },
+    { "include": "#control-keywords" },
+    { "include": "#primitives" },
+    { "include": "#self-keyword" },
+    { "include": "#match-pattern" },
+    { "include": "#type-annotation" },
+    { "include": "#namespace" },
+    { "include": "#function-call" },
+    { "include": "#operator" },
+    { "include": "#identifier" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.double-slash.fox",
+          "match": "//.*$"
+        }
+      ]
+    },
+    "strings": {
+      "name": "string.quoted.double.fox",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        {
+          "name": "constant.character.escape.fox",
+          "match": "\\\\."
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.float.fox",
+          "match": "\\b\\d+\\.\\d+\\b"
+        },
+        {
+          "name": "constant.numeric.integer.fox",
+          "match": "\\b\\d+\\b"
+        }
+      ]
+    },
+    "constants": {
+      "patterns": [
+        {
+          "name": "constant.language.boolean.fox",
+          "match": "\\b(true|false)\\b"
+        }
+      ]
+    },
+    "use-stmt": {
+      "begin": "\\b(use)\\b",
+      "end": ";",
+      "beginCaptures": {
+        "1": { "name": "keyword.control.import.fox" }
+      },
+      "endCaptures": {
+        "0": { "name": "punctuation.terminator.statement.fox" }
+      },
+      "patterns": [
+        { "include": "#comments" },
+        { "include": "#strings" },
+        {
+          "name": "keyword.control.import.fox",
+          "match": "\\b(as)\\b"
+        },
+        {
+          "name": "punctuation.separator.namespace.fox",
+          "match": "::"
+        },
+        {
+          "name": "punctuation.section.block.begin.fox",
+          "match": "\\{"
+        },
+        {
+          "name": "punctuation.section.block.end.fox",
+          "match": "\\}"
+        },
+        {
+          "name": "punctuation.separator.comma.fox",
+          "match": ","
+        },
+        {
+          "name": "entity.name.namespace.fox",
+          "match": "\\b[a-zA-Z_][a-zA-Z0-9_]*\\b(?=\\s*::)"
+        },
+        {
+          "name": "variable.parameter.fox",
+          "match": "\\b[a-zA-Z_][a-zA-Z0-9_]*\\b(?=\\s*[},;]|\\s+as\\b)"
+        },
+        {
+          "name": "variable.parameter.fox",
+          "match": "\\b[a-zA-Z_][a-zA-Z0-9_]*\\b(?=\\s*$)"
+        }
+      ]
+    },
+    "extern-fn": {
+      "match": "\\b(extern)\\s+(fn)\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
+      "captures": {
+        "1": { "name": "keyword.declaration.fox" },
+        "2": { "name": "keyword.declaration.fox" },
+        "3": { "name": "entity.name.function.fox" }
+      }
+    },
+    "function-decl": {
+      "match": "\\b(?:(pub)\\s+)?(?:(static)\\s+)?(?:(compiler)\\s+)?(fn)\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
+      "captures": {
+        "1": { "name": "storage.modifier.fox" },
+        "2": { "name": "storage.modifier.fox" },
+        "3": { "name": "storage.modifier.fox" },
+        "4": { "name": "keyword.declaration.fox" },
+        "5": { "name": "entity.name.function.fox" }
+      }
+    },
+    "struct-decl": {
+      "match": "\\b(?:(pub)\\s+)?(struct)\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
+      "captures": {
+        "1": { "name": "storage.modifier.fox" },
+        "2": { "name": "keyword.declaration.fox" },
+        "3": { "name": "entity.name.type.struct.fox" }
+      }
+    },
+    "enum-decl": {
+      "match": "\\b(?:(pub)\\s+)?(enum)\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
+      "captures": {
+        "1": { "name": "storage.modifier.fox" },
+        "2": { "name": "keyword.declaration.fox" },
+        "3": { "name": "entity.name.type.enum.fox" }
+      }
+    },
+    "trait-decl": {
+      "match": "\\b(?:(pub)\\s+)?(trait)\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
+      "captures": {
+        "1": { "name": "storage.modifier.fox" },
+        "2": { "name": "keyword.declaration.fox" },
+        "3": { "name": "entity.name.type.trait.fox" }
+      }
+    },
+    "impl-decl": {
+      "match": "\\b(impl)\\s+([a-zA-Z_][a-zA-Z0-9_]*)?",
+      "captures": {
+        "1": { "name": "keyword.declaration.fox" },
+        "2": { "name": "entity.name.type.impl.fox" }
+      }
+    },
+    "let-decl": {
+      "match": "\\b(let)\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
+      "captures": {
+        "1": { "name": "keyword.declaration.fox" },
+        "2": { "name": "variable.other.readwrite.fox" }
+      }
+    },
+    "const-decl": {
+      "match": "\\b(?:(pub)\\s+)?(const)\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
+      "captures": {
+        "1": { "name": "storage.modifier.fox" },
+        "2": { "name": "keyword.declaration.fox" },
+        "3": { "name": "variable.other.constant.fox" }
+      }
+    },
+    "control-keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.fox",
+          "match": "\\b(if|else|while|for|in|return|match|default)\\b"
+        },
+        {
+          "name": "keyword.declaration.fox",
+          "match": "\\b(map)\\b"
+        }
+      ]
+    },
+    "primitives": {
+      "patterns": [
+        {
+          "name": "storage.type.primitive.fox",
+          "match": "\\b(i8|i16|i32|i64|u8|u16|u32|u64|f32|f64|byte|bool|str|anyref)\\b"
+        }
+      ]
+    },
+    "self-keyword": {
+      "patterns": [
+        {
+          "name": "variable.language.self.fox",
+          "match": "\\bself\\b"
+        }
+      ]
+    },
+    "match-pattern": {
+      "patterns": [
+        {
+          "name": "variable.other.enummember.fox",
+          "match": "\\b(Some|None|Ok|Err)\\b"
+        },
+        {
+          "name": "keyword.operator.arrow.fox",
+          "match": "=>"
+        }
+      ]
+    },
+    "operator": {
+      "patterns": [
+        {
+          "name": "keyword.operator.comparison.fox",
+          "match": "==|!=|<=|>=|<|>"
+        },
+        {
+          "name": "keyword.operator.assignment.fox",
+          "match": "\\+=|="
+        },
+        {
+          "name": "keyword.operator.bitwise.fox",
+          "match": "<<|>>|&|\\^|~"
+        },
+        {
+          "name": "keyword.operator.logical.fox",
+          "match": "\\|\\|"
+        },
+        {
+          "name": "keyword.operator.bitwise.fox",
+          "match": "\\|(?!\\|)"
+        },
+        {
+          "name": "keyword.operator.arithmetic.fox",
+          "match": "\\+|-|\\*|/|%"
+        },
+        {
+          "name": "keyword.operator.range.fox",
+          "match": "\\.\\.\\.|\\.\\.|\\."
+        },
+        {
+          "name": "punctuation.separator.colon.fox",
+          "match": "::|:"
+        },
+        {
+          "name": "punctuation.separator.comma.fox",
+          "match": ","
+        },
+        {
+          "name": "punctuation.terminator.statement.fox",
+          "match": ";"
+        },
+        {
+          "name": "punctuation.section.brackets.fox",
+          "match": "[(){}\\[\\]]"
+        }
+      ]
+    },
+    "type-annotation": {
+      "match": "(?<!:)(:)(?!:)\\s*(?:(\\[)\\s*(\\]))?\\s*(?:(\\[)\\s*(\\]))?\\s*([a-zA-Z_][a-zA-Z0-9_]*)(?:\\s*(<)\\s*(?:(\\[)\\s*(\\]))?\\s*(?:(\\[)\\s*(\\]))?\\s*([a-zA-Z_][a-zA-Z0-9_]*)(?:\\s*(,)\\s*(?:(\\[)\\s*(\\]))?\\s*(?:(\\[)\\s*(\\]))?\\s*([a-zA-Z_][a-zA-Z0-9_]*))?\\s*(>))?",
+      "captures": {
+        "1": { "name": "punctuation.separator.colon.fox" },
+        "2": { "name": "punctuation.section.brackets.fox" },
+        "3": { "name": "punctuation.section.brackets.fox" },
+        "4": { "name": "punctuation.section.brackets.fox" },
+        "5": { "name": "punctuation.section.brackets.fox" },
+        "6": { "name": "entity.name.type.fox" },
+        "7": { "name": "punctuation.section.brackets.fox" },
+        "8": { "name": "punctuation.section.brackets.fox" },
+        "9": { "name": "punctuation.section.brackets.fox" },
+        "10": { "name": "punctuation.section.brackets.fox" },
+        "11": { "name": "punctuation.section.brackets.fox" },
+        "12": { "name": "entity.name.type.fox" },
+        "13": { "name": "punctuation.separator.comma.fox" },
+        "14": { "name": "punctuation.section.brackets.fox" },
+        "15": { "name": "punctuation.section.brackets.fox" },
+        "16": { "name": "punctuation.section.brackets.fox" },
+        "17": { "name": "punctuation.section.brackets.fox" },
+        "18": { "name": "entity.name.type.fox" },
+        "19": { "name": "punctuation.section.brackets.fox" }
+      }
+    },
+    "namespace": {
+      "match": "\\b[a-zA-Z_][a-zA-Z0-9_]*\\b(?=\\s*::)",
+      "name": "entity.name.type.fox"
+    },
+    "function-call": {
+      "match": "\\b[a-zA-Z_][a-zA-Z0-9_]*\\b(?=\\s*\\()",
+      "name": "entity.name.function.fox"
+    },
+    "identifier": {
+      "match": "\\b[a-zA-Z_][a-zA-Z0-9_]*\\b",
+      "name": "variable.other.readwrite.fox"
+    }
+  }
+}

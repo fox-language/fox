@@ -1,0 +1,77 @@
+use std::fmt::{sprintf};
+use std::testing::{assert_eq};
+
+pub fn test_sprintf_no_args() {
+    let s: str = sprintf("Hello, world!");
+    assert_eq(s, "Hello, world!");
+}
+
+pub fn test_sprintf_one_str() {
+    let s: str = sprintf("Hello, %s", "Alice");
+    assert_eq(s, "Hello, Alice");
+}
+
+pub fn test_sprintf_one_i32() {
+    let s: str = sprintf("Count: %d", 42);
+    assert_eq(s, "Count: 42");
+}
+
+pub fn test_sprintf_two_args() {
+    let s: str = sprintf("Hello, %s, you are %d", "Bob", 30);
+    assert_eq(s, "Hello, Bob, you are 30");
+}
+
+pub fn test_sprintf_three_args() {
+    let s: str = sprintf("%s is %d years old (%b)", "Carol", 25, true);
+    assert_eq(s, "Carol is 25 years old (true)");
+}
+
+pub fn test_sprintf_no_specifiers_with_args() {
+    let s: str = sprintf("just text", 1, 2, 3);
+    assert_eq(s, "just text");
+}
+
+pub fn test_sprintf_escaped_percent() {
+    let s: str = sprintf("100%% done");
+    assert_eq(s, "100% done");
+}
+
+pub fn test_sprintf_nested() {
+    let inner: str = sprintf("%d", 42);
+    let outer: str = sprintf("inner is %s", inner);
+    assert_eq(outer, "inner is 42");
+}
+
+pub fn test_sprintf_in_let_chain() {
+    let a: str = sprintf("%s + %s = %d", "one", "two", 3);
+    let b: str = sprintf("Result: %s", a);
+    assert_eq(b, "Result: one + two = 3");
+}
+
+fn format_forward(fmt: str, ...args: anyref): str {
+    return sprintf(fmt, ...args);
+}
+
+pub fn test_sprintf_forwarding() {
+    let s: str = format_forward("%s is %d", "Alice", 42);
+    assert_eq(s, "Alice is 42");
+}
+
+pub fn test_sprintf_v() {
+    let s1: str = sprintf("val: %v", "hello");
+    assert_eq(s1, "val: hello");
+
+    let s2: str = sprintf("val: %v", 123);
+    assert_eq(s2, "val: 123");
+
+    let s3: str = sprintf("val: %v", true);
+    assert_eq(s3, "val: 1");
+
+    let s4: str = sprintf("val: %v", false);
+    assert_eq(s4, "val: 0");
+
+    let val_f: f64 = 3.14;
+    let s5: str = sprintf("val: %v", val_f);
+    assert_eq(s5, "val: 3.14");
+}
+

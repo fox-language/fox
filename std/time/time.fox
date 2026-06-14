@@ -1,0 +1,485 @@
+use std::collections::{Option};
+
+extern fn __fox_time_now(): i64;
+extern fn __fox_time_local_offset(): i32;
+extern fn __fox_i32_to_str(v: i32): str;
+extern fn __fox_json_parse_int(s: str): i32;
+
+struct CivilDate {
+    year: i32;
+    month: i32;
+    day: i32;
+}
+
+fn days_to_civil(days: i32): CivilDate {
+    let z: i32 = days + 719468;
+    let era: i32 = (if z >= 0 { z } else { z - 146096 }) / 146097;
+    let doe: i32 = z - era * 146097;
+    let yoe: i32 = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let y: i32 = yoe + era * 400;
+    let doy: i32 = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp: i32 = (5 * doy + 2) / 153;
+    let d: i32 = doy - (153 * mp + 2) / 5 + 1;
+    let mp_less_10: bool = mp < 10;
+    let m: i32 = if mp_less_10 { mp + 3 } else { mp - 9 };
+    let m_less_2: bool = m <= 2;
+    let final_y: i32 = if m_less_2 { y + 1 } else { y };
+    return CivilDate {
+        year: final_y,
+        month: m,
+        day: d
+    };
+}
+
+fn civil_to_days(year: i32, month: i32, day: i32): i32 {
+    let month_less_2: bool = month <= 2;
+    let y: i32 = if month_less_2 { year - 1 } else { year };
+    let m: i32 = if month_less_2 { month + 9 } else { month - 3 };
+    let era: i32 = (if y >= 0 { y } else { y - 399 }) / 400;
+    let yoe: i32 = y - era * 400;
+    let doy: i32 = (153 * m + 2) / 5 + day - 1;
+    let doe: i32 = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    return era * 146097 + doe - 719468;
+}
+
+fn pad_zero(val: i32, digits: i32): str {
+    let s: str = __fox_i32_to_str(val);
+    let s_len: i32 = s.len();
+    while s_len < digits {
+        s = "0" + s;
+        s_len = s.len();
+    }
+    return s;
+}
+
+fn format_offset(offset_mins: i32, colons: bool): str {
+    let is_pos: bool = offset_mins >= 0;
+    let sign: str = if is_pos { "+" } else { "-" };
+    let abs_mins: i32 = if is_pos { offset_mins } else { 0 - offset_mins };
+    let h: i32 = abs_mins / 60;
+    let m: i32 = abs_mins % 60;
+    let sep: str = if colons { ":" } else { "" };
+    return sign + pad_zero(h, 2) + sep + pad_zero(m, 2);
+}
+
+pub struct Time {
+    unix_ms: i64;
+    offset_mins: i32;
+}
+
+impl Time {
+    pub static fn new(unix_ms: i64, offset_mins: i32): Time {
+        return Time {
+            unix_ms: unix_ms,
+            offset_mins: offset_mins
+        };
+    }
+
+    pub static fn now(): Time {
+        let ms: i64 = __fox_time_now();
+        let offset: i32 = __fox_time_local_offset();
+        return Time {
+            unix_ms: ms,
+            offset_mins: 0 - offset
+        };
+    }
+
+    pub static fn utc(year: i32, month: i32, day: i32, hour: i32, minute: i32, second: i32, ms: i32): Time {
+        let days: i32 = civil_to_days(year, month, day);
+        let sec: i64 = (days as i64) * 86400 + (hour as i64) * 3600 + (minute as i64) * 60 + (second as i64);
+        let ms_total: i64 = sec * 1000 + (ms as i64);
+        return Time {
+            unix_ms: ms_total,
+            offset_mins: 0
+        };
+    }
+
+    pub static fn local(year: i32, month: i32, day: i32, hour: i32, minute: i32, second: i32, ms: i32): Time {
+        let offset: i32 = __fox_time_local_offset();
+        let days: i32 = civil_to_days(year, month, day);
+        let sec: i64 = (days as i64) * 86400 + (hour as i64) * 3600 + (minute as i64) * 60 + (second as i64);
+        let local_ms: i64 = sec * 1000 + (ms as i64);
+        let ms_total: i64 = local_ms + (offset as i64) * 60000;
+        return Time {
+            unix_ms: ms_total,
+            offset_mins: 0 - offset
+        };
+    }
+
+    pub static fn unix(sec: i64, nsec: i32): Time {
+        let ms: i64 = sec * 1000 + ((nsec / 1000000) as i64);
+        return Time {
+            unix_ms: ms,
+            offset_mins: 0
+        };
+    }
+
+    pub static fn unix_ms(ms: i64): Time {
+        return Time {
+            unix_ms: ms,
+            offset_mins: 0
+        };
+    }
+
+    pub fn unix_sec(): i64 {
+        return self.unix_ms / 1000;
+    }
+
+    pub fn unix_ms_val(): i64 {
+        return self.unix_ms;
+    }
+
+    pub fn year(): i32 {
+        let cd: CivilDate = self.to_civil();
+        return cd.year;
+    }
+
+    pub fn month(): i32 {
+        let cd: CivilDate = self.to_civil();
+        return cd.month;
+    }
+
+    pub fn day(): i32 {
+        let cd: CivilDate = self.to_civil();
+        return cd.day;
+    }
+
+    pub fn hour(): i32 {
+        let local_ms: i64 = self.unix_ms + (self.offset_mins as i64) * 60000;
+        let local_sec: i64 = local_ms / 1000;
+        let rem_sec: i64 = local_sec % 86400;
+        if rem_sec < 0 {
+            rem_sec = rem_sec + 86400;
+        }
+        return (rem_sec / 3600) as i32;
+    }
+
+    pub fn minute(): i32 {
+        let local_ms: i64 = self.unix_ms + (self.offset_mins as i64) * 60000;
+        let local_sec: i64 = local_ms / 1000;
+        let rem_sec: i64 = local_sec % 86400;
+        if rem_sec < 0 {
+            rem_sec = rem_sec + 86400;
+        }
+        let rem_hour: i32 = (rem_sec % 3600) as i32;
+        return rem_hour / 60;
+    }
+
+    pub fn second(): i32 {
+        let local_ms: i64 = self.unix_ms + (self.offset_mins as i64) * 60000;
+        let local_sec: i64 = local_ms / 1000;
+        let rem_sec: i64 = local_sec % 86400;
+        if rem_sec < 0 {
+            rem_sec = rem_sec + 86400;
+        }
+        let rem_hour: i32 = (rem_sec % 3600) as i32;
+        return rem_hour % 60;
+    }
+
+    pub fn millisecond(): i32 {
+        let local_ms: i64 = self.unix_ms + (self.offset_mins as i64) * 60000;
+        let ms: i32 = (local_ms % 1000) as i32;
+        if ms < 0 {
+            ms = ms + 1000;
+        }
+        return ms;
+    }
+
+    pub fn offset(): i32 {
+        return self.offset_mins;
+    }
+
+    fn to_civil(): CivilDate {
+        let local_ms: i64 = self.unix_ms + (self.offset_mins as i64) * 60000;
+        let local_sec: i64 = local_ms / 1000;
+        let days: i32 = (local_sec / 86400) as i32;
+        let rem_sec: i64 = local_sec % 86400;
+        if rem_sec < 0 {
+            days = days - 1;
+        }
+        return days_to_civil(days);
+    }
+
+    pub fn format(layout: str): str {
+        let cd: CivilDate = self.to_civil();
+        let year: i32 = cd.year;
+        let month: i32 = cd.month;
+        let day: i32 = cd.day;
+        let hour: i32 = self.hour();
+        let minute: i32 = self.minute();
+        let second: i32 = self.second();
+
+        let result: str = "";
+        let i: i32 = 0;
+        let n: i32 = layout.len();
+        while i < n {
+            let matched: bool = false;
+            if i + 6 <= n {
+                if layout.substring(i, i + 6).eq("-07:00") {
+                    result = result + format_offset(self.offset_mins, true);
+                    i = i + 6;
+                    matched = true;
+                }
+            }
+            if matched == false {
+                if i + 5 <= n {
+                    if layout.substring(i, i + 5).eq("-0700") {
+                        result = result + format_offset(self.offset_mins, false);
+                        i = i + 5;
+                        matched = true;
+                    }
+                }
+            }
+            if matched == false {
+                if i + 4 <= n {
+                    if layout.substring(i, i + 4).eq("2006") {
+                        result = result + pad_zero(year, 4);
+                        i = i + 4;
+                        matched = true;
+                    }
+                }
+            }
+            if matched == false {
+                if i + 2 <= n {
+                    let sub: str = layout.substring(i, i + 2);
+                    if sub.eq("01") {
+                        result = result + pad_zero(month, 2);
+                        i = i + 2;
+                        matched = true;
+                    }
+                    if matched == false {
+                        if sub.eq("02") {
+                            result = result + pad_zero(day, 2);
+                            i = i + 2;
+                            matched = true;
+                        }
+                    }
+                    if matched == false {
+                        if sub.eq("15") {
+                            result = result + pad_zero(hour, 2);
+                            i = i + 2;
+                            matched = true;
+                        }
+                    }
+                    if matched == false {
+                        if sub.eq("04") {
+                            result = result + pad_zero(minute, 2);
+                            i = i + 2;
+                            matched = true;
+                        }
+                    }
+                    if matched == false {
+                        if sub.eq("05") {
+                            result = result + pad_zero(second, 2);
+                            i = i + 2;
+                            matched = true;
+                        }
+                    }
+                }
+            }
+            if matched == false {
+                let sub1: str = layout.substring(i, i + 1);
+                if sub1.eq("Z") {
+                    let is_zero_offset: bool = self.offset_mins == 0;
+                    if is_zero_offset {
+                        result = result + "Z";
+                    } else {
+                        result = result + format_offset(self.offset_mins, true);
+                    }
+                    i = i + 1;
+                } else {
+                    result = result + sub1;
+                    i = i + 1;
+                }
+            }
+        }
+        return result;
+    }
+
+    pub static fn parse(layout: str, value: str): Option<Time> {
+        let year: i32 = 1970;
+        let month: i32 = 1;
+        let day: i32 = 1;
+        let hour: i32 = 0;
+        let minute: i32 = 0;
+        let second: i32 = 0;
+        let ms: i32 = 0;
+        let offset_mins: i32 = 0;
+
+        let i: i32 = 0;
+        let j: i32 = 0;
+        let n_layout: i32 = layout.len();
+        let n_val: i32 = value.len();
+
+        while i < n_layout {
+            if j >= n_val {
+                return Option<Time>::None();
+            }
+
+            let matched: bool = false;
+
+            if i + 6 <= n_layout {
+                if layout.substring(i, i + 6).eq("-07:00") {
+                    if j + 6 > n_val {
+                        return Option<Time>::None();
+                    }
+                    let sign: str = value.substring(j, j + 1);
+                    let h_str: str = value.substring(j + 1, j + 3);
+                    let m_str: str = value.substring(j + 4, j + 6);
+                    let h: i32 = __fox_json_parse_int(h_str);
+                    let m: i32 = __fox_json_parse_int(m_str);
+                    let off: i32 = h * 60 + m;
+                    let is_neg: bool = sign.eq("-");
+                    offset_mins = if is_neg { 0 - off } else { off };
+                    i = i + 6;
+                    j = j + 6;
+                    matched = true;
+                }
+            }
+            if matched == false {
+                if i + 5 <= n_layout {
+                    if layout.substring(i, i + 5).eq("-0700") {
+                        if j + 5 > n_val {
+                            return Option<Time>::None();
+                        }
+                        let sign: str = value.substring(j, j + 1);
+                        let h_str: str = value.substring(j + 1, j + 3);
+                        let m_str: str = value.substring(j + 3, j + 5);
+                        let h: i32 = __fox_json_parse_int(h_str);
+                        let m: i32 = __fox_json_parse_int(m_str);
+                        let off: i32 = h * 60 + m;
+                        let is_neg: bool = sign.eq("-");
+                        offset_mins = if is_neg { 0 - off } else { off };
+                        i = i + 5;
+                        j = j + 5;
+                        matched = true;
+                    }
+                }
+            }
+            if matched == false {
+                if i + 4 <= n_layout {
+                    if layout.substring(i, i + 4).eq("2006") {
+                        if j + 4 > n_val {
+                            return Option<Time>::None();
+                        }
+                        let year_str: str = value.substring(j, j + 4);
+                        year = __fox_json_parse_int(year_str);
+                        i = i + 4;
+                        j = j + 4;
+                        matched = true;
+                    }
+                }
+            }
+            if matched == false {
+                if i + 2 <= n_layout {
+                    let sub: str = layout.substring(i, i + 2);
+                    if sub.eq("01") {
+                        if j + 2 > n_val {
+                            return Option<Time>::None();
+                        }
+                        let month_str: str = value.substring(j, j + 2);
+                        month = __fox_json_parse_int(month_str);
+                        i = i + 2;
+                        j = j + 2;
+                        matched = true;
+                    }
+                    if matched == false {
+                        if sub.eq("02") {
+                            if j + 2 > n_val {
+                                return Option<Time>::None();
+                            }
+                            let day_str: str = value.substring(j, j + 2);
+                            day = __fox_json_parse_int(day_str);
+                            i = i + 2;
+                            j = j + 2;
+                            matched = true;
+                        }
+                    }
+                    if matched == false {
+                        if sub.eq("15") {
+                            if j + 2 > n_val {
+                                return Option<Time>::None();
+                            }
+                            let hour_str: str = value.substring(j, j + 2);
+                            hour = __fox_json_parse_int(hour_str);
+                            i = i + 2;
+                            j = j + 2;
+                            matched = true;
+                        }
+                    }
+                    if matched == false {
+                        if sub.eq("04") {
+                            if j + 2 > n_val {
+                                return Option<Time>::None();
+                            }
+                            let min_str: str = value.substring(j, j + 2);
+                            minute = __fox_json_parse_int(min_str);
+                            i = i + 2;
+                            j = j + 2;
+                            matched = true;
+                        }
+                    }
+                    if matched == false {
+                        if sub.eq("05") {
+                            if j + 2 > n_val {
+                                return Option<Time>::None();
+                            }
+                            let sec_str: str = value.substring(j, j + 2);
+                            second = __fox_json_parse_int(sec_str);
+                            i = i + 2;
+                            j = j + 2;
+                            matched = true;
+                        }
+                    }
+                }
+            }
+            if matched == false {
+                let sub1: str = layout.substring(i, i + 1);
+                if sub1.eq("Z") {
+                    let is_z_val: bool = value.substring(j, j + 1).eq("Z");
+                    if is_z_val {
+                        offset_mins = 0;
+                        i = i + 1;
+                        j = j + 1;
+                    } else {
+                        if j + 6 > n_val {
+                            return Option<Time>::None();
+                        }
+                        let sign: str = value.substring(j, j + 1);
+                        let h_str: str = value.substring(j + 1, j + 3);
+                        let m_str: str = value.substring(j + 4, j + 6);
+                        let h: i32 = __fox_json_parse_int(h_str);
+                        let m: i32 = __fox_json_parse_int(m_str);
+                        let off: i32 = h * 60 + m;
+                        let is_neg: bool = sign.eq("-");
+                        offset_mins = if is_neg { 0 - off } else { off };
+                        i = i + 1;
+                        j = j + 6;
+                    }
+                } else {
+                    let val_char: str = value.substring(j, j + 1);
+                    let eq_res: bool = sub1.eq(val_char);
+                    if eq_res == false {
+                        return Option<Time>::None();
+                    }
+                    i = i + 1;
+                    j = j + 1;
+                }
+            }
+        }
+
+        if j < n_val {
+            return Option<Time>::None();
+        }
+
+        let days: i32 = civil_to_days(year, month, day);
+        let sec: i64 = (days as i64) * 86400 + (hour as i64) * 3600 + (minute as i64) * 60 + (second as i64);
+        let local_ms: i64 = sec * 1000 + (ms as i64);
+        let ms_total: i64 = local_ms - (offset_mins as i64) * 60000;
+
+        return Option<Time>::Some(Time {
+            unix_ms: ms_total,
+            offset_mins: offset_mins
+        });
+    }
+}

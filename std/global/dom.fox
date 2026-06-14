@@ -1,0 +1,69 @@
+use std::collections::{Option};
+
+extern fn __fox_dom_is_null(r: externref): bool;
+extern fn __fox_dom_is_null_str(s: str): bool;
+extern fn __fox_dom_element_append_child(parent: externref, child: externref);
+extern fn __fox_dom_element_set_attribute(el: externref, name: str, value: str);
+extern fn __fox_dom_element_get_attribute(el: externref, name: str): str;
+extern fn __fox_dom_element_remove_attribute(el: externref, name: str);
+extern fn __fox_dom_element_set_text_content(el: externref, text: str);
+extern fn __fox_dom_element_get_text_content(el: externref): str;
+extern fn __fox_dom_element_add_click_listener(el: externref, handler: ());
+extern fn __fox_dom_document_query_selector(selector: str): externref;
+extern fn __fox_dom_document_create_element(tag: str): externref;
+
+pub struct Element {
+    _ref: externref;
+}
+
+impl Element {
+    pub fn append_child(child: Element) {
+        __fox_dom_element_append_child(self._ref, child._ref);
+    }
+
+    pub fn set_attribute(name: str, value: str) {
+        __fox_dom_element_set_attribute(self._ref, name, value);
+    }
+
+    pub fn get_attribute(name: str): Option<str> {
+        let attr: str = __fox_dom_element_get_attribute(self._ref, name);
+        if __fox_dom_is_null_str(attr) {
+            return Option<str>::None();
+        }
+        return Option<str>::Some(attr);
+    }
+
+    pub fn remove_attribute(name: str) {
+        __fox_dom_element_remove_attribute(self._ref, name);
+    }
+
+    pub fn set_text_content(text: str) {
+        __fox_dom_element_set_text_content(self._ref, text);
+    }
+
+    pub fn get_text_content(): str {
+        return __fox_dom_element_get_text_content(self._ref);
+    }
+
+    pub fn on_click(handler: ()) {
+        __fox_dom_element_add_click_listener(self._ref, handler);
+    }
+}
+
+pub struct Document {
+}
+
+impl Document {
+    pub static fn query_selector(selector: str): Option<dom::Element> {
+        let el_ref: externref = __fox_dom_document_query_selector(selector);
+        if __fox_dom_is_null(el_ref) {
+            return Option<dom::Element>::None();
+        }
+        return Option<dom::Element>::Some(Element { _ref: el_ref });
+    }
+
+    pub static fn create_element(tag: str): Element {
+        let el_ref: externref = __fox_dom_document_create_element(tag);
+        return Element { _ref: el_ref };
+    }
+}

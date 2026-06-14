@@ -1,0 +1,28 @@
+use std::testing::{assert_eq};
+
+pub fn test_basic_closure() {
+    let add = (a: i32, b: i32): i32 => {
+        return a + b;
+    };
+    assert_eq(add(5, 7), 12);
+}
+
+pub fn test_captured_vars() {
+    let multiplier: i32 = 10;
+    let multiply = (a: i32): i32 => {
+        return a * multiplier;
+    };
+    assert_eq(multiply(5), 50);
+}
+
+pub fn test_arrow_closure() {
+    let add = (a: i32, b: i32): i32 => a + b;
+    assert_eq(add(5, 7), 12);
+}
+
+pub fn test_iife() {
+    let twelve = ((a: i32, b: i32): i32 => {
+        return a + b;
+    })(5, 7);
+    assert_eq(twelve, 12);
+}

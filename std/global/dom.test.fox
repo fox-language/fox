@@ -1,0 +1,14 @@
+use std::testing::{assert_eq};
+use std::global::{Document, Element};
+use std::collections::{Option};
+
+pub fn test_dom_types() {
+    let el_opt: Option<dom::Element> = Document::query_selector("body");
+    match el_opt {
+        Some(el) => {
+            let child: Element = Document::create_element("div");
+            el.append_child(child);
+        },
+        None() => {},
+    };
+}

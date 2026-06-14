@@ -1,0 +1,124 @@
+extern fn __fox_http_send(url: str, method: str, headers: str, body: str): externref;
+extern fn __fox_http_get_status(resp: externref): i32;
+extern fn __fox_http_get_status_text(resp: externref): str;
+extern fn __fox_http_get_body(resp: externref): str;
+
+pub enum Method {
+    Get();
+    Post();
+    Put();
+    Delete();
+    Patch();
+    Head();
+    Options();
+    Connect();
+    Trace();
+}
+
+pub struct Header {
+    name: str;
+    value: str;
+}
+
+pub struct Request {
+    url: str;
+    method: Method;
+    headers: []Header;
+    body: str;
+}
+
+impl Request {
+    pub static fn new(url: str, method: Method): Request {
+        return Request {
+            url: url,
+            method: method,
+            headers: new [0]Header,
+            body: ""
+        };
+    }
+
+    pub static fn get(url: str): Request {
+        return Request::new(url, Get());
+    }
+
+    pub static fn post(url: str): Request {
+        return Request::new(url, Post());
+    }
+
+    pub static fn put(url: str): Request {
+        return Request::new(url, Put());
+    }
+
+    pub static fn delete(url: str): Request {
+        return Request::new(url, Delete());
+    }
+
+    pub static fn patch(url: str): Request {
+        return Request::new(url, Patch());
+    }
+
+    pub static fn head(url: str): Request {
+        return Request::new(url, Head());
+    }
+
+    pub static fn options(url: str): Request {
+        return Request::new(url, Options());
+    }
+
+    pub static fn connect(url: str): Request {
+        return Request::new(url, Connect());
+    }
+
+    pub static fn trace(url: str): Request {
+        return Request::new(url, Trace());
+    }
+
+    pub fn headers(headers: []Header): Request {
+        self.headers = headers;
+        return self;
+    }
+
+    pub fn body(body: str): Request {
+        self.body = body;
+        return self;
+    }
+
+    pub fn send(): Response {
+        let serialized_headers: str = "";
+        let i: i32 = 0;
+        while i < self.headers.len() {
+            let h: Header = self.headers[i];
+            serialized_headers = serialized_headers + h.name + ":" + h.value + "\n";
+            i = i + 1;
+        }
+
+        let method_str: str = match self.method {
+            Get() => "GET",
+            Post() => "POST",
+            Put() => "PUT",
+            Delete() => "DELETE",
+            Patch() => "PATCH",
+            Head() => "HEAD",
+            Options() => "OPTIONS",
+            Connect() => "CONNECT",
+            Trace() => "TRACE",
+        };
+
+        let resp_ref: externref = __fox_http_send(self.url, method_str, serialized_headers, self.body);
+        let status: i32 = __fox_http_get_status(resp_ref);
+        let status_text: str = __fox_http_get_status_text(resp_ref);
+        let body: str = __fox_http_get_body(resp_ref);
+
+        return Response {
+            status: status,
+            status_text: status_text,
+            body: body
+        };
+    }
+}
+
+pub struct Response {
+    status: i32;
+    status_text: str;
+    body: str;
+}

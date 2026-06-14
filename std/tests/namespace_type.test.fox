@@ -1,0 +1,22 @@
+use std::collections::{Option};
+use std::testing::{assert_eq};
+
+pub struct MyTestStruct {
+    id: i32;
+}
+
+let current_effect: Option<MyTestStruct> = Option::None();
+
+pub fn test_namespace_type_matching() {
+    let ef = MyTestStruct { id: 42 };
+    current_effect = Option<MyTestStruct>::Some(ef);
+    
+    match current_effect {
+        Some(val) => {
+            assert_eq(val.id, 42);
+        },
+        None() => {
+            assert_eq(0, 1);
+        },
+    };
+}

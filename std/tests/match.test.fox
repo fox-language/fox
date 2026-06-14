@@ -1,0 +1,32 @@
+use std::collections::{Option};
+use std::testing::{assert_eq};
+
+struct Foo {
+    bar: i32;
+}
+
+pub fn test_match() {
+    let foo: Foo = Foo { bar: 0 };
+    inc_opt_braces(Option::Some(foo));
+    assert_eq(foo.bar, 1);
+    inc_opt(Option::Some(foo));
+    assert_eq(foo.bar, 2);
+}
+
+fn inc_opt_braces(foo: Option<Foo>) {
+    match foo {
+        Some(v) => { inc(v); },
+        None() => {},
+    };
+}
+
+fn inc_opt(foo: Option<Foo>) {
+    match foo {
+        Some(v) => inc(v),
+        None() => {},
+    };
+}
+
+fn inc(foo: Foo) {
+    foo.bar = foo.bar + 1;
+}

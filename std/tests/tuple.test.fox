@@ -1,0 +1,66 @@
+use std::testing::{assert_eq};
+use std::collections::{Option};
+
+fn swap(t: (i32, str)): (str, i32) {
+    let (a: i32, b: str) = t;
+    return (b, a);
+}
+
+pub fn test_tuple_destructuring() {
+    let (a: i32, b: str) = (42, "hello");
+    assert_eq(a, 42);
+    assert_eq(b, "hello");
+}
+
+pub fn test_nested_tuples() {
+    let (a: i32, b: (str, bool)) = (42, ("hello", true));
+    assert_eq(a, 42);
+    let (s: str, flag: bool) = b;
+    assert_eq(s, "hello");
+    assert_eq(flag, true);
+}
+
+pub fn test_nested_tuples_destructuring() {
+    let (a: i32, (s: str, flag: bool)) = (42, ("hello", true));
+    assert_eq(a, 42);
+    assert_eq(s, "hello");
+    assert_eq(flag, true);
+}
+
+pub fn test_deeply_nested_tuples_destructuring() {
+    let ((a: i32, b: str), (c: bool, d: i32)) = ((42, "hello"), (true, 100));
+    assert_eq(a, 42);
+    assert_eq(b, "hello");
+    assert_eq(c, true);
+    assert_eq(d, 100);
+}
+
+pub fn test_tuple_fn() {
+    let (s: str, n: i32) = swap((123, "world"));
+    assert_eq(s, "world");
+    assert_eq(n, 123);
+}
+
+pub fn test_tuple_field_access() {
+    let t: (i32, str, bool) = (10, "test", false);
+    assert_eq(t.f0, 10);
+    assert_eq(t.f1, "test");
+    assert_eq(t.f2, false);
+}
+
+struct TestBox<T> {
+    value: T;
+}
+
+impl<T> TestBox<T> {
+    pub fn get(): T {
+        return self.value;
+    }
+}
+
+pub fn test_generic_monomorphization_with_special_types() {
+    let b2 = TestBox<(i32, str)> { value: (42, "hello") };
+    let (num: i32, s: str) = b2.get();
+    assert_eq(num, 42);
+    assert_eq(s, "hello");
+}

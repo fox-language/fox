@@ -1,0 +1,48 @@
+use std::math::{E, PI, sin, cos, tan, asin, acos, atan, atan2, sinh, cosh, tanh};
+use std::math::{pow, exp, log, log10, log2};
+use std::testing::{assert_approx_eq, assert_eq};
+
+
+pub fn test_trig() {
+    assert_approx_eq(sin(0.0), 0.0, 0.00000000001);
+    assert_approx_eq(sin(PI / 2.0), 1.0, 0.00000000001);
+    assert_approx_eq(cos(0.0), 1.0, 0.00000000001);
+    assert_approx_eq(cos(PI), 0.0 - 1.0, 0.00000000001);
+    assert_approx_eq(tan(0.0), 0.0, 0.00000000001);
+    assert_approx_eq(asin(0.0), 0.0, 0.00000000001);
+    assert_approx_eq(acos(1.0), 0.0, 0.00000000001);
+    assert_approx_eq(atan(0.0), 0.0, 0.00000000001);
+    assert_approx_eq(atan2(1.0, 1.0), PI / 4.0, 0.00000000001);
+    assert_approx_eq(sinh(0.0), 0.0, 0.00000000001);
+    assert_approx_eq(cosh(0.0), 1.0, 0.00000000001);
+    assert_approx_eq(tanh(0.0), 0.0, 0.00000000001);
+}
+
+pub fn test_exp_log_pow() {
+    assert_approx_eq(pow(2.0, 3.0), 8.0, 0.00001);
+    assert_approx_eq(exp(1.0), E, 0.00001);
+    assert_approx_eq(log(E), 1.0, 0.00001);
+    assert_approx_eq(log10(100.0), 2.0, 0.00001);
+    assert_approx_eq(log2(8.0), 3.0, 0.00001);
+    let nine: f64 = 9.0;
+    assert_approx_eq(nine.sqrt(), 3.0, 0.00001);
+}
+
+pub fn test_utils() {
+    let a: f64 = 0.0 - 4.2;
+    let b: f64 = 4.2;
+    let c: f64 = 4.7;
+    let d: f64 = 4.9;
+    let e: f64 = 3.0;
+    let f: f64 = 4.0;
+    assert_approx_eq(a.abs(), 4.2, 0.00000000001);
+    assert_approx_eq(b.abs(), 4.2, 0.00000000001);
+    assert_approx_eq(b.ceil(), 5.0, 0.00000000001);
+    assert_approx_eq(c.floor(), 4.0, 0.00000000001);
+    assert_approx_eq(round(4.4), 4.0, 0.00000000001);
+    assert_approx_eq(round(4.6), 5.0, 0.00000000001);
+    assert_approx_eq(d.trunc(), 4.0, 0.00000000001);
+    assert_approx_eq((0.0 - d).trunc(), 0.0 - 4.0, 0.00000000001);
+    assert_approx_eq(e.min(f), 3.0, 0.00000000001);
+    assert_approx_eq(e.max(f), 4.0, 0.00000000001);
+}

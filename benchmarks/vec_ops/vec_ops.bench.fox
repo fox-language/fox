@@ -1,0 +1,40 @@
+use std::collections::{Vec, Option};
+
+pub fn bench_vec_ops(): i32 {
+    let v: Vec<i32> = Vec<i32>::new();
+    let i: i32 = 0;
+    
+    // Test push & dynamic resizing allocations
+    while i < 10000 {
+        v.push(i);
+        i = i + 1;
+    }
+    
+    // Test indexing and modifications
+    let sum: i32 = 0;
+    i = 0;
+    while i < 10000 {
+        let val: Option<i32> = v.get(i);
+        match val {
+            Some(x) => {
+                v.set(i, x * 2);
+                sum = sum + x;
+            },
+            None() => {}
+        };
+        i = i + 1;
+    }
+    
+    // Test pop
+    i = 0;
+    while i < 5000 {
+        let val: Option<i32> = v.pop();
+        match val {
+            Some(x) => { sum = sum - x; },
+            None() => {}
+        };
+        i = i + 1;
+    }
+    
+    return sum + v.len();
+}

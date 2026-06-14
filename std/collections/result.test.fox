@@ -1,0 +1,111 @@
+use std::testing::{assert_eq};
+use std::collections::{Result};
+
+pub fn test_result_ok() {
+    let res: Result<i32, str> = Result<i32, str>::ok(42);
+
+    let matched: bool = false;
+    match res {
+        Ok(val) => {
+            assert_eq(42, val);
+            matched = true;
+        },
+        Err(err) => {},
+    };
+    assert_eq(true, matched);
+}
+
+pub fn test_result_err() {
+    let res: Result<i32, str> = Result<i32, str>::err("failure");
+
+    let matched: bool = false;
+    match res {
+        Ok(val) => {},
+        Err(err) => {
+            assert_eq("failure", err);
+            matched = true;
+        },
+    };
+    assert_eq(true, matched);
+}
+
+pub fn test_result_arms_reversed() {
+    let res: Result<i32, str> = Result<i32, str>::ok(100);
+    let matched: bool = false;
+
+    match res {
+        Err(err) => {},
+        Ok(val) => {
+            assert_eq(100, val);
+            matched = true;
+        },
+    };
+    assert_eq(true, matched);
+}
+
+pub fn test_result_only_ok() {
+    let res: Result<i32, str> = Result<i32, str>::ok(123);
+    let matched: bool = false;
+
+    match res {
+        Ok(val) => {
+            assert_eq(123, val);
+            matched = true;
+        },
+        _ => {},
+    };
+    assert_eq(true, matched);
+}
+
+pub fn test_result_only_err() {
+    let res: Result<i32, str> = Result<i32, str>::err("oops");
+    let matched: bool = false;
+
+    match res {
+        Err(err) => {
+            assert_eq("oops", err);
+            matched = true;
+        },
+        _ => {},
+    };
+    assert_eq(true, matched);
+}
+
+pub fn test_result_expr_ok() {
+    let res: Result<i32, str> = Result<i32, str>::ok(7);
+    let n: i32 = match res {
+        Ok(val) => val,
+        Err(err) => 0,
+    };
+    assert_eq(7, n);
+}
+
+pub fn test_result_expr_err() {
+    let res: Result<i32, str> = Result<i32, str>::err("error");
+    let n: i32 = match res {
+        Ok(val) => val,
+        Err(err) => 99,
+    };
+    assert_eq(99, n);
+}
+
+pub fn test_result_expr_in_arithmetic() {
+    let res: Result<i32, str> = Result<i32, str>::ok(5);
+    let n: i32 = match res {
+        Ok(val) => val * 2,
+        Err(err) => 0,
+    };
+    assert_eq(10, n);
+}
+
+pub fn test_default_keyword() {
+    let a: i32 = default;
+    assert_eq(0, a);
+
+    let b: f64 = default;
+    let approx_zero: bool = b == 0.0;
+    assert_eq(true, approx_zero);
+
+    let c: bool = default;
+    assert_eq(false, c);
+}

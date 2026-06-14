@@ -1,0 +1,157 @@
+use std::collections::{Option};
+use std::crypto::{Hash, Hasher32};
+
+pub struct Map<K in Hash, V> {
+    keys: Vec<K>;
+    vals: Vec<V>;
+    states: Vec<i32>;
+    capacity: i32;
+    mask: i32;
+    size: i32;
+    hasher: Hasher32;
+}
+
+impl<K in Hash, V> Map<K, V> {
+    pub static fn new(): Map<K, V> {
+        return Map<K, V>::with_capacity(16);
+    }
+
+    pub static fn with_capacity(cap: i32): Map<K, V> {
+        let power: i32 = 1;
+        while power < cap {
+            power = power * 2;
+        }
+        cap = power;
+
+        let keys: Vec<K> = Vec<K>::with_len(cap);
+        let vals: Vec<V> = Vec<V>::with_len(cap);
+        let states: Vec<i32> = Vec<i32>::with_len(cap);
+        let i: i32 = 0;
+        while i < cap {
+            states.set(i, 0);
+            i = i + 1;
+        }
+        return Map<K, V> {
+            keys: keys,
+            vals: vals,
+            states: states,
+            capacity: cap,
+            mask: cap - 1,
+            size: 0,
+            hasher: Hasher32::new()
+        };
+    }
+
+    pub fn len(): i32 {
+        return self.size;
+    }
+
+    fn bucket_index(key: K): i32 {
+        self.hasher.reset();
+        key.hash(self.hasher);
+        let h: i32 = self.hasher.finish();
+        return h & self.mask;
+    }
+
+    pub fn set(key: K, val: V) {
+        let mask: i32 = self.mask;
+        let idx: i32 = self.bucket_index(key);
+        let start_idx: i32 = idx;
+
+        while true {
+            let state: i32 = self.states.data[idx];
+            if state == 0 {
+                self.keys.data[idx] = key;
+                self.vals.data[idx] = val;
+                self.states.data[idx] = 1;
+                self.size = self.size + 1;
+                return;
+            }
+            if state == 1 {
+                let k: K = self.keys.data[idx];
+                if k == key {
+                    self.vals.data[idx] = val;
+                    return;
+                }
+            }
+            idx = (idx + 1) & mask;
+            if idx == start_idx {
+                return;
+            }
+        }
+    }
+
+    pub fn get(key: K): Option<V> {
+        let mask: i32 = self.mask;
+        let idx: i32 = self.bucket_index(key);
+        let start_idx: i32 = idx;
+
+        while true {
+            let state: i32 = self.states.data[idx];
+            if state == 0 {
+                return Option<V>::None();
+            }
+            if state == 1 {
+                let k: K = self.keys.data[idx];
+                if k == key {
+                    return Option<V>::Some(self.vals.data[idx]);
+                }
+            }
+            idx = (idx + 1) & mask;
+            if idx == start_idx {
+                return Option<V>::None();
+            }
+        }
+        return Option<V>::None();
+    }
+
+    pub fn has(key: K): bool {
+        let mask: i32 = self.mask;
+        let idx: i32 = self.bucket_index(key);
+        let start_idx: i32 = idx;
+
+        while true {
+            let state: i32 = self.states.data[idx];
+            if state == 0 {
+                return false;
+            }
+            if state == 1 {
+                let k: K = self.keys.data[idx];
+                if k == key {
+                    return true;
+                }
+            }
+            idx = (idx + 1) & mask;
+            if idx == start_idx {
+                return false;
+            }
+        }
+        return false;
+    }
+
+    pub fn iter(): MapIterator<K, V> {
+        return MapIterator<K, V> { inner: self, index: 0 };
+    }
+}
+
+pub struct MapIterator<K in Hash, V> {
+    inner: Map<K, V>;
+    index: i32;
+}
+
+impl<K in Hash, V> MapIterator<K, V> {
+    pub fn next(): Option<(K, V)> {
+        while self.index < self.inner.capacity {
+            let state: i32 = self.inner.states.data[self.index];
+            if state == 1 {
+                let key: K = self.inner.keys.data[self.index];
+                let val: V = self.inner.vals.data[self.index];
+                self.index = self.index + 1;
+                return Option<(K, V)>::Some((key, val));
+            }
+            self.index = self.index + 1;
+        }
+        return Option<(K, V)>::None();
+    }
+}
+

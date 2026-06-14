@@ -1,0 +1,66 @@
+use std::time::{Time};
+use std::testing::{assert_eq};
+use std::collections::{Option};
+
+pub fn test_time_utc_constructor() {
+    let t: Time = Time::utc(2026, 6, 13, 12, 34, 56, 789);
+    assert_eq(2026, t.year());
+    assert_eq(6, t.month());
+    assert_eq(13, t.day());
+    assert_eq(12, t.hour());
+    assert_eq(34, t.minute());
+    assert_eq(56, t.second());
+    assert_eq(789, t.millisecond());
+    assert_eq(0, t.offset());
+}
+
+pub fn test_time_unix_constructor() {
+    let t: Time = Time::unix(1773489296 as i64, 789000000);
+    assert_eq(1773489296 as i64, t.unix_sec());
+    assert_eq(1773489296789 as i64, t.unix_ms_val());
+}
+
+pub fn test_time_format() {
+    let t: Time = Time::utc(2026, 6, 13, 12, 34, 56, 789);
+    let s: str = t.format("2006-01-02 15:04:05");
+    assert_eq("2026-06-13 12:34:56", s);
+
+    let s2: str = t.format("02/01/2006 15:04");
+    assert_eq("13/06/2026 12:34", s2);
+}
+
+pub fn test_time_parse() {
+    let opt: Option<Time> = Time::parse("2006-01-02 15:04:05", "2026-06-13 12:34:56");
+    match opt {
+        Some(t) => {
+            assert_eq(2026, t.year());
+            assert_eq(6, t.month());
+            assert_eq(13, t.day());
+            assert_eq(12, t.hour());
+            assert_eq(34, t.minute());
+            assert_eq(56, t.second());
+            assert_eq(0, t.offset());
+        },
+        None() => {
+            assert_eq(0, 1);
+        },
+    };
+}
+
+pub fn test_time_timezone() {
+    let opt: Option<Time> = Time::parse("2006-01-02 15:04:05 -0700", "2026-06-13 12:34:56 -0500");
+    match opt {
+        Some(t) => {
+            assert_eq(0 - 300, t.offset());
+            
+            let s: str = t.format("2006-01-02 15:04:05 -0700");
+            assert_eq("2026-06-13 12:34:56 -0500", s);
+            
+            let utc_time: Time = Time::new(t.unix_ms_val(), 0);
+            assert_eq(17, utc_time.hour());
+        },
+        None() => {
+            assert_eq(0, 1);
+        },
+    };
+}

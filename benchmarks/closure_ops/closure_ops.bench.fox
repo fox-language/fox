@@ -1,0 +1,15 @@
+pub fn bench_closure_ops(): i32 {
+    let sum: i32 = 0;
+    let i: i32 = 0;
+    while i < 10000 {
+        let a: i32 = i;
+        let b: i32 = i * 2;
+        let c: i32 = i * 3;
+        let compute: (i32): i32 = (x: i32): i32 => {
+            return (x * a) - b + c;
+        };
+        sum = (sum + compute(i)) % 99991;
+        i = i + 1;
+    }
+    return sum;
+}

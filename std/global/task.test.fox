@@ -1,0 +1,23 @@
+use std::global::{Task};
+use std::testing::{assert_eq};
+
+struct RunFlag {
+    ran: bool;
+}
+
+pub fn test_task_yield() {
+    Task::yield_now();
+}
+
+pub fn test_task_sleep() {
+    Task::sleep(10);
+}
+
+pub fn test_task_queue() {
+    let flag: RunFlag = RunFlag { ran: false };
+    Task::queue(() => {
+        flag.ran = true;
+    });
+    Task::yield_now();
+    assert_eq(flag.ran, true);
+}

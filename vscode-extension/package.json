@@ -1,0 +1,51 @@
+{
+  "name": "fox",
+  "displayName": "Fox",
+  "description": "Syntax highlighting for the Fox language.",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/twharmon/fox.git"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "keywords": [
+    "fox",
+    "language",
+    "syntax-highlighting"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "fox",
+        "aliases": [
+          "Fox",
+          "fox"
+        ],
+        "extensions": [
+          ".fox"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "fox",
+        "scopeName": "source.fox",
+        "path": "./syntaxes/fox.tmLanguage.json"
+      }
+    ]
+  },
+  "scripts": {
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@vscode/vsce": "^3.9.2"
+  }
+}

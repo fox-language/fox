@@ -1,0 +1,130 @@
+use std::testing::{assert_eq};
+use std::collections::{Option};
+use std::encoding::json::{Serialize,Deserialize,Rename};
+use std::global::{Console};
+
+#[Serialize,Deserialize]
+struct TestUser {
+    id: i32;
+    name: str;
+    is_active: bool;
+    rating: f64;
+}
+
+#[Serialize,Deserialize]
+struct OptionAndArrayTest {
+    optional_name: Option<str>;
+    optional_age: Option<i32>;
+    numbers: []i32;
+}
+
+
+#[Serialize,Deserialize]
+struct TestRenameField {
+    #[Rename("isActive")]
+    is_active: bool;
+}
+
+pub fn test_json_primitives() {
+    let u: TestUser = TestUser {
+        id: 42,
+        name: "Alice",
+        is_active: true,
+        rating: 4.8
+    };
+
+    let serialized: str = u.encode_json();
+    Console::log(serialized);
+    assert_eq(serialized.contains("\"id\":42"), true);
+    assert_eq(serialized.contains("\"name\":\"Alice\""), true);
+    assert_eq(serialized.contains("\"is_active\":true"), true);
+
+    let parsed_opt: Option<TestUser> = TestUser::decode_json(serialized);
+    let success: bool = false;
+    match parsed_opt {
+        Some(parsed) => {
+            assert_eq(parsed.id, 42);
+            assert_eq(parsed.name, "Alice");
+            assert_eq(parsed.is_active, true);
+            let diff: f64 = parsed.rating - 4.8;
+            if diff < 0.0 { diff = 0.0 - diff; }
+            assert_eq(diff < 0.0001, true);
+            success = true;
+        },
+        None() => {
+            success = false;
+        }
+    };
+    assert_eq(success, true);
+}
+
+pub fn test_json_options_and_arrays() {
+    let t: OptionAndArrayTest = OptionAndArrayTest {
+        optional_name: Option<str>::Some("Bob"),
+        optional_age: Option<i32>::None(),
+        numbers: new [3]i32
+    };
+    t.numbers[0] = 10;
+    t.numbers[1] = 20;
+    t.numbers[2] = 30;
+
+    let serialized: str = t.encode_json();
+    assert_eq(serialized.contains("\"optional_name\":\"Bob\""), true);
+    assert_eq(serialized.contains("\"optional_age\":null"), true);
+    assert_eq(serialized.contains("\"numbers\":[10,20,30]"), true);
+
+    let parsed_opt: Option<OptionAndArrayTest> = OptionAndArrayTest::decode_json(serialized);
+    let success: bool = false;
+    match parsed_opt {
+        Some(parsed) => {
+            let name_matched: bool = false;
+            match parsed.optional_name {
+                Some(name) => {
+                    assert_eq(name, "Bob");
+                    name_matched = true;
+                },
+                None() => {}
+            };
+            assert_eq(name_matched, true);
+
+            let age_matched: bool = false;
+            match parsed.optional_age {
+                Some(age) => {},
+                None() => {
+                    age_matched = true;
+                }
+            };
+            assert_eq(age_matched, true);
+
+            assert_eq(parsed.numbers.len(), 3);
+            assert_eq(parsed.numbers[0], 10);
+            assert_eq(parsed.numbers[1], 20);
+            assert_eq(parsed.numbers[2], 30);
+            success = true;
+        },
+        None() => {}
+    };
+    assert_eq(success, true);
+}
+
+pub fn test_json_rename_field() {
+    let t: TestRenameField = TestRenameField {
+        is_active: true,
+    };
+
+    let serialized: str = t.encode_json();
+    assert_eq(serialized.contains("\"isActive\":true"), true);
+
+    let parsed_opt: Option<TestRenameField> = TestRenameField::decode_json(serialized);
+    let success: bool = false;
+    match parsed_opt {
+        Some(parsed) => {
+            assert_eq(parsed.is_active, true);
+            success = true;
+        },
+        None() => {
+            success = false;
+        }
+    };
+    assert_eq(success, true);
+}

@@ -1,0 +1,155 @@
+use std::collections::{Option};
+use std::crypto::{Hash, Hasher32};
+
+pub struct Set<K in Hash> {
+    keys: Vec<K>;
+    states: Vec<i32>;
+    capacity: i32;
+    mask: i32;
+    size: i32;
+    hasher: Hasher32;
+}
+
+impl<K in Hash> Set<K> {
+    pub static fn new(): Set<K> {
+        return Set<K>::with_capacity(16);
+    }
+
+    pub static fn with_capacity(cap: i32): Set<K> {
+        let power: i32 = 1;
+        while power < cap {
+            power = power * 2;
+        }
+        cap = power;
+
+        let keys: Vec<K> = Vec<K>::with_len(cap);
+        let states: Vec<i32> = Vec<i32>::with_len(cap);
+        let i: i32 = 0;
+        while i < cap {
+            states.set(i, 0);
+            i = i + 1;
+        }
+        
+        // Changed from Map to Set and removed vals
+        return Set<K> {
+            keys: keys,
+            states: states,
+            capacity: cap,
+            mask: cap - 1,
+            size: 0,
+            hasher: Hasher32::new()
+        };
+    }
+
+    pub fn size(): i32 {
+        return self.size;
+    }
+
+    fn bucket_index(key: K): i32 {
+        self.hasher.reset();
+        key.hash(self.hasher);
+        let h: i32 = self.hasher.finish();
+        return h & self.mask;
+    }
+
+    // Dropped the value parameter and renamed to add
+    pub fn add(key: K) {
+        let mask: i32 = self.mask;
+        let idx: i32 = self.bucket_index(key);
+        let start_idx: i32 = idx;
+
+        while true {
+            let state: i32 = self.states.data[idx];
+            if state == 0 {
+                self.keys.data[idx] = key;
+                self.states.data[idx] = 1;
+                self.size = self.size + 1;
+                return;
+            }
+            if state == 1 {
+                let k: K = self.keys.data[idx];
+                if k == key {
+                    return;
+                }
+            }
+            idx = (idx + 1) & mask;
+            if idx == start_idx {
+                return;
+            }
+        }
+    }
+
+    pub fn has(key: K): bool {
+        let mask: i32 = self.mask;
+        let idx: i32 = self.bucket_index(key);
+        let start_idx: i32 = idx;
+
+        while true {
+            let state: i32 = self.states.data[idx];
+            if state == 0 {
+                return false;
+            }
+            if state == 1 {
+                let k: K = self.keys.data[idx];
+                if k == key {
+                    return true;
+                }
+            }
+            idx = (idx + 1) & mask;
+            if idx == start_idx {
+                return false;
+            }
+        }
+        return false;
+    }
+
+    pub fn delete(key: K): bool {
+        let mask: i32 = self.mask;
+        let idx: i32 = self.bucket_index(key);
+        let start_idx: i32 = idx;
+
+        while true {
+            let state: i32 = self.states.data[idx];
+            if state == 0 {
+                return false;
+            }
+            if state == 1 {
+                let k: K = self.keys.data[idx];
+                if k == key {
+                    self.states.data[idx] = 2; // Tombstone
+                    self.size = self.size - 1;
+                    return true;
+                }
+            }
+            idx = (idx + 1) & mask;
+            if idx == start_idx {
+                return false;
+            }
+        }
+        return false;
+    }
+
+    pub fn iter(): SetIterator<K> {
+        return SetIterator<K> { set: self, index: 0 };
+    }
+}
+
+pub struct SetIterator<K in Hash> {
+    set: Set<K>;
+    index: i32;
+}
+
+impl<K in Hash> SetIterator<K> {
+    pub fn next(): Option<K> {
+        while self.index < self.set.capacity {
+            let state: i32 = self.set.states.data[self.index];
+            if state == 1 {
+                let key: K = self.set.keys.data[self.index];
+                self.index = self.index + 1;
+                return Option<K>::Some(key);
+            }
+            self.index = self.index + 1;
+        }
+        return Option<K>::None();
+    }
+}

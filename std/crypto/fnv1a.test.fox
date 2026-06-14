@@ -1,0 +1,124 @@
+use std::testing::{assert_eq};
+use std::crypto::{OFFSET_32, PRIME_32, OFFSET_64, PRIME_64,
+                  hash32_str, hash32_bytes, hash32_i32, hash32_i64,
+                  hash64_str, hash64_bytes, hash64_i32, hash64_i64,
+                  Hasher32, Hasher64};
+
+// RFC 9923 reference vectors for FNV-1a-32.
+pub fn test_offset_basis_constant() {
+    assert_eq(OFFSET_32, -2128831035);
+    assert_eq(PRIME_32, 16777619);
+}
+
+pub fn test_hash32_empty() {
+    let h: i32 = hash32_str("");
+    assert_eq(h, OFFSET_32);
+}
+
+pub fn test_hash32_a() {
+    // 0xE40C292C as i32
+    assert_eq(hash32_str("a"), -468965076);
+}
+
+pub fn test_hash32_foobar() {
+    // 0xBF9CF968 as i32
+    assert_eq(hash32_str("foobar"), -1080231576);
+}
+
+// Hashing the same input twice produces the same output.
+pub fn test_hash32_deterministic() {
+    let a: i32 = hash32_str("hello world");
+    let b: i32 = hash32_str("hello world");
+    assert_eq(a, b);
+}
+
+// Two strings differing in a single byte should not collide.
+pub fn test_hash32_avalanche() {
+    let a: i32 = hash32_str("foo");
+    let b: i32 = hash32_str("foO");
+    assert_eq(false, a == b);
+}
+
+// splitmix32 is its own function with its own expected behavior.
+pub fn test_hash32_i32_known() {
+    // splitmix32(0) = 0 (the identity case for a fixed-point-free mix).
+    assert_eq(hash32_i32(0), 0);
+    let one: i32 = hash32_i32(1);
+    let two: i32 = hash32_i32(2);
+    assert_eq(false, one == two);
+    assert_eq(one, hash32_i32(1));
+}
+
+// Stateful 32-bit hasher matches a one-shot hash.
+pub fn test_hasher32_matches_one_shot() {
+    let one_shot: i32 = hash32_str("hello");
+    let h: Hasher32 = Hasher32::new();
+    h.write_str("hello");
+    assert_eq(h.finish(), one_shot);
+}
+
+// Hasher can fold multiple parts: the digest differs from any
+// single part's hash, and from the other order.
+pub fn test_hasher32_composes() {
+    let h1: Hasher32 = Hasher32::new();
+    h1.write_str("foo");
+    h1.write_str("bar");
+    let combined_foobar: i32 = h1.finish();
+
+    let h2: Hasher32 = Hasher32::new();
+    h2.write_str("bar");
+    h2.write_str("foo");
+    let combined_barfoo: i32 = h2.finish();
+
+    assert_eq(false, combined_foobar == combined_barfoo);
+    let just_foo: i32 = hash32_str("foo");
+    let just_bar: i32 = hash32_str("bar");
+    let just_foobar: i32 = hash32_str("foobar");
+    assert_eq(false, combined_foobar == just_foo);
+    assert_eq(false, combined_foobar == just_bar);
+    assert_eq(true, combined_foobar == just_foobar);
+}
+
+pub fn test_hasher32_write_i32() {
+    let h: Hasher32 = Hasher32::new();
+    h.write_i32(42);
+    let digest: i32 = h.finish();
+    let h2: Hasher32 = Hasher32::new();
+    h2.write_i32(43);
+    assert_eq(false, digest == h2.finish());
+    let h3: Hasher32 = Hasher32::new();
+    h3.write_i32(42);
+    assert_eq(h3.finish(), digest);
+}
+
+// RFC 9923 reference vectors for FNV-1a-64.
+pub fn test_offset_basis_64() {
+    assert_eq(OFFSET_64 == 14695981039346656037, true);
+    assert_eq(PRIME_64 == 1099511628211, true);
+}
+
+pub fn test_hash64_empty_is_offset() {
+    let h: i64 = hash64_str("");
+    assert_eq(h == OFFSET_64, true);
+}
+
+pub fn test_hash64_a() {
+    // 0xAF63DC4C8601EC8C
+    let h: i64 = hash64_str("a");
+    let expected: i64 = 12638187200555641996;
+    assert_eq(h == expected, true);
+}
+
+pub fn test_hash64_foobar() {
+    // 0x85944171F73967E8
+    let h: i64 = hash64_str("foobar");
+    let expected: i64 = 9625390261332436968;
+    assert_eq(h == expected, true);
+}
+
+pub fn test_hasher64_matches_one_shot() {
+    let one_shot: i64 = hash64_str("hello");
+    let h: Hasher64 = Hasher64::new();
+    h.write_str("hello");
+    assert_eq(h.finish() == one_shot, true);
+}

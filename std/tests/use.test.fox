@@ -1,0 +1,26 @@
+use std::fmt;
+use fmt::{sprintf as sprintf_alias};
+use std::fmt::{sprintf};
+use std::fmt::sprintf as sprintf_alias_2;
+use std::testing::{assert_eq};
+
+pub fn test_bare_fn() {
+    let s: str = sprintf("Hello, world!");
+    assert_eq(s, "Hello, world!");
+}
+
+pub fn test_namespaced_fn() {
+    let s: str = fmt::sprintf("Hello, world!");
+    assert_eq(s, "Hello, world!");
+}
+
+pub fn test_alias_fn() {
+    let s: str = sprintf_alias("Hello, world!");
+    assert_eq(s, "Hello, world!");
+}
+
+pub fn test_alias_fn_2() {
+    let s: str = sprintf_alias_2("Hello, world!");
+    assert_eq(s, "Hello, world!");
+}
+

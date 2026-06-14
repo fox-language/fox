@@ -1,0 +1,47 @@
+use std::collections::{Option};
+use std::fmt;
+use std::encoding::json::{Serialize, Deserialize};
+
+#[Serialize, Deserialize]
+struct Person {
+    name: str;
+    age: i32;
+    is_student: bool;
+    height: f64;
+}
+
+pub fn bench_json_serialize(): i32 {
+    let p: Person = Person {
+        name: "Alice",
+        age: 30,
+        is_student: false,
+        height: 5.8,
+    };
+    let sum: i32 = 0;
+    let i: i32 = 0;
+    while i < 500 {
+        let json: str = p.encode_json();
+        sum = sum + json.len();
+        i = i + 1;
+    }
+    return sum;
+}
+
+pub fn bench_json_deserialize(): i32 {
+    let raw: str = "{\"name\":\"Bob\",\"age\":25,\"is_student\":true,\"height\":6.0}";
+    let sum: i32 = 0;
+    let i: i32 = 0;
+    while i < 500 {
+        let opt: Option<Person> = Person::decode_json(raw);
+        match opt {
+            Some(person) => {
+                sum = sum + person.age;
+            },
+            None() => {
+                sum = sum - 1;
+            },
+        };
+        i = i + 1;
+    }
+    return sum;
+}

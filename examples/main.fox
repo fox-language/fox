@@ -1,0 +1,51 @@
+use std::global::{Document, Element, Console};
+use std::collections::{Option};
+use std::fmt;
+use self::fw;
+
+fn main() {
+    if let Some(app_el) = Document::query_selector("body") {
+        app_el.append_child(counter());
+    } else {
+        Console::log("Error: body element not found!");
+    }
+}
+
+fn counter(): Element {
+    let app_el = Document::create_element("div");
+    let count = fw::signal<i32>(0);
+    let display = Document::create_element("div");
+    app_el.append_child(display);
+    fw::effect((): Option<()> => {
+        let current = count.get();
+        Console::log(fmt::sprintf("Count changed to %d", current));
+        display.set_text_content(fmt::sprintf("Count: %d", current));
+        return Option::Some(() => Console::log("cleanup!"));
+    });
+    let btn = Document::create_element("button");
+    btn.set_text_content("Increment");
+    btn.on_click(() => count.update((v: i32): i32 => v + 1));
+    app_el.append_child(btn);
+    return app_el;
+
+
+    // return Div {
+    //     class: "foo",
+    //     children: [
+    //         P {
+    //             text_content: "bar",
+    //             on_click: (e: Event) => count.update((v: i32): i32 => v + 1),
+    //         },
+    //     ],
+    // };
+
+    // return Div::new({
+    //     class: "foo",
+    //     children: [
+    //         P::new({
+    //             text_content: "bar",
+    //             on_click: (e: Event) => count.update((v: i32): i32 => v + 1),
+    //         }),
+    //     ],
+    // });
+}

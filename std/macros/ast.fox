@@ -1,0 +1,9 @@
+pub struct StructDef {
+    name: str;
+}
+
+pub struct StructFieldDef {
+    name: str;
+    ty: str;
+    rename_to: str;
+}

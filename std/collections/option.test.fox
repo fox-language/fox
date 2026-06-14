@@ -1,0 +1,167 @@
+use std::testing::{assert_eq};
+use std::collections::{Option, Vec};
+
+pub fn test_option_some() {
+    let opt: Option<i32> = Option<i32>::Some(42);
+    let is_some: bool = match opt {
+        Some(val) => true,
+        None() => false,
+    };
+    let is_none: bool = match opt {
+        Some(val) => false,
+        None() => true,
+    };
+    assert_eq(true, is_some);
+    assert_eq(false, is_none);
+
+    let matched: bool = false;
+    match opt {
+        Some(val) => {
+            assert_eq(42, val);
+            matched = true;
+        },
+        None() => {},
+    };
+    assert_eq(true, matched);
+}
+
+pub fn test_option_none() {
+    let opt: Option<i32> = Option<i32>::None();
+    let is_some: bool = match opt {
+        Some(val) => true,
+        None() => false,
+    };
+    let is_none: bool = match opt {
+        Some(val) => false,
+        None() => true,
+    };
+    assert_eq(false, is_some);
+    assert_eq(true, is_none);
+
+    let matched: bool = false;
+    match opt {
+        Some(val) => {},
+        None() => {
+            matched = true;
+        },
+    };
+    assert_eq(true, matched);
+}
+
+pub fn test_option_arms_reversed() {
+    let opt: Option<str> = Option<str>::Some("hello");
+    let matched: bool = false;
+
+    match opt {
+        None() => {},
+        Some(val) => {
+            assert_eq("hello", val);
+            matched = true;
+        },
+    };
+    assert_eq(true, matched);
+}
+
+pub fn test_option_only_some() {
+    let opt: Option<i32> = Option<i32>::Some(123);
+    let matched: bool = false;
+
+    match opt {
+        Some(val) => {
+            assert_eq(123, val);
+            matched = true;
+        },
+        _ => {},
+    };
+    assert_eq(true, matched);
+}
+
+pub fn test_option_only_none() {
+    let opt: Option<i32> = Option<i32>::None();
+    let matched: bool = false;
+
+    match opt {
+        None() => {
+            matched = true;
+        },
+        _ => {},
+    };
+    assert_eq(true, matched);
+}
+
+pub fn test_option_expr_some() {
+    let opt: Option<i32> = Option<i32>::Some(7);
+    let n: i32 = match opt {
+        Some(val) => val,
+        None() => 0,
+    };
+    assert_eq(7, n);
+}
+
+pub fn test_option_expr_none() {
+    let opt: Option<i32> = Option<i32>::None();
+    let n: i32 = match opt {
+        Some(val) => val,
+        None() => 99,
+    };
+    assert_eq(99, n);
+}
+
+pub fn test_option_expr_in_arithmetic() {
+    let opt: Option<i32> = Option<i32>::Some(5);
+    let n: i32 = match opt {
+        Some(val) => val * 2,
+        None() => 0,
+    };
+    assert_eq(10, n);
+}
+
+pub fn test_option_if_let_some() {
+    let opt: Option<i32> = Option<i32>::Some(77);
+    let matched: bool = false;
+    
+    if let Some(val) = opt {
+        assert_eq(77, val);
+        matched = true;
+    } else {
+        matched = false;
+    }
+    assert_eq(true, matched);
+}
+
+pub fn test_option_if_let_none() {
+    let opt: Option<i32> = Option<i32>::None();
+    let matched: bool = false;
+    
+    if let Some(val) = opt {
+        matched = false;
+    } else {
+        matched = true;
+    }
+    assert_eq(true, matched);
+}
+
+pub fn test_option_while_let() {
+    let list: Vec<i32> = Vec<i32>::new();
+    list.push(1);
+    list.push(2);
+    list.push(3);
+
+    let sum: i32 = 0;
+    while let Some(val) = list.pop() {
+        sum = sum + val;
+    }
+    assert_eq(6, sum);
+}
+
+pub fn test_option_while_pattern_no_let() {
+    let list: Vec<i32> = Vec<i32>::new();
+    list.push(10);
+    list.push(20);
+
+    let sum: i32 = 0;
+    while Some(val) = list.pop() {
+        sum = sum + val;
+    }
+    assert_eq(30, sum);
+}

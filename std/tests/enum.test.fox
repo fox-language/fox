@@ -1,0 +1,156 @@
+use std::testing::{assert_eq};
+
+enum TrafficLight {
+    Red();
+    Yellow();
+    Green();
+}
+
+enum Shape {
+    Circle(i32);
+    Rectangle(i32, i32);
+    Point();
+}
+
+enum Message {
+    Quit();
+    Move(i32, i32);
+    Write(str);
+    ChangeColor(i32, i32, i32);
+}
+
+enum Status {
+    Active();
+    Inactive();
+}
+
+impl Status {
+    pub fn is_active(): bool {
+        return match self {
+            Active() => true,
+            Inactive() => false,
+        };
+    }
+}
+
+pub fn test_enum_no_payload() {
+    let r: TrafficLight = Red();
+    let y: TrafficLight = Yellow();
+    let g: TrafficLight = Green();
+
+    // Match statement
+    let tag_r: i32 = 0;
+    match r {
+        Red() => { tag_r = 1; },
+        Yellow() => { tag_r = 2; },
+        Green() => { tag_r = 3; },
+    };
+    assert_eq(1, tag_r);
+
+    // Match expression
+    let tag_y: i32 = match y {
+        Red() => 1,
+        Yellow() => 2,
+        Green() => 3,
+    };
+    assert_eq(2, tag_y);
+
+    let tag_g: i32 = match g {
+        Red() => 1,
+        Yellow() => 2,
+        Green() => 3,
+    };
+    assert_eq(3, tag_g);
+}
+
+pub fn test_enum_with_payload() {
+    let c: Shape = Circle(15);
+    let r: Shape = Rectangle(10, 20);
+    let p: Shape = Point();
+
+    // Circle payload extraction
+    let radius: i32 = match c {
+        Circle(rad) => rad,
+        Rectangle(w, h) => 0,
+        Point() => 0,
+    };
+    assert_eq(15, radius);
+
+    // Rectangle payload extraction and calculation
+    let area: i32 = match r {
+        Circle(rad) => 0,
+        Rectangle(w, h) => w * h,
+        Point() => 0,
+    };
+    assert_eq(200, area);
+
+    // Message payload testing
+    let write_msg: Message = Write("Hello Fox");
+    let written: str = "";
+    match write_msg {
+        Quit() => {},
+        Move(x, y) => {},
+        Write(text) => {
+            written = text;
+        },
+        ChangeColor(red, green, blue) => {},
+    };
+    assert_eq(true, written.eq("Hello Fox"));
+}
+
+pub fn test_enum_catch_all() {
+    let c: Shape = Circle(42);
+    
+    let is_circle: bool = match c {
+        Circle(rad) => true,
+        _ => false,
+    };
+    assert_eq(true, is_circle);
+
+    let r: Shape = Rectangle(10, 10);
+    let is_circle_rect: bool = match r {
+        Circle(rad) => true,
+        _ => false,
+    };
+    assert_eq(false, is_circle_rect);
+}
+
+enum Boxed<T> {
+    Full(T);
+    Empty();
+}
+
+pub fn test_generic_enum() {
+    let b1: Boxed<i32> = Boxed<i32>::Full(100);
+    let b2: Boxed<i32> = Boxed<i32>::Empty();
+    let b3: Boxed<str> = Boxed<str>::Full("generic enum");
+
+    let val1: i32 = match b1 {
+        Full(x) => x,
+        Empty() => 0,
+    };
+    assert_eq(100, val1);
+
+    let val2: i32 = match b2 {
+        Full(x) => x,
+        Empty() => 0,
+    };
+    assert_eq(0, val2);
+
+    let val3: str = "";
+    match b3 {
+        Full(s) => {
+            val3 = s;
+        },
+        Empty() => {},
+    };
+    assert_eq(true, val3.eq("generic enum"));
+}
+
+pub fn test_enum_methods() {
+    let active: Status = Active();
+    let inactive: Status = Inactive();
+
+    assert_eq(true, active.is_active());
+    assert_eq(false, inactive.is_active());
+}

@@ -1,0 +1,19 @@
+use std::fmt::{sprintf};
+
+extern fn __fox_panic(v: str);
+
+pub fn assert_eq<T in i32 | i64 | str | bool>(a: T, b: T) {
+    if a != b {
+        __fox_panic(sprintf("expected %v == %v", a, b));
+    }
+}
+
+pub fn assert_approx_eq(a: f64, b: f64, epsilon: f64) {
+    let diff: f64 = a - b;
+    if diff < 0.0 {
+        diff = 0.0 - diff;
+    }
+    if diff > epsilon {
+        __fox_panic(sprintf("expected %f ~= %f", a, b));
+    }
+}

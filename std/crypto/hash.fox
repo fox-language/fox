@@ -1,0 +1,25 @@
+// std::crypto::hash - Standard Hash trait and implementations.
+
+use std::crypto::{Hasher32};
+
+pub trait Hash {
+    fn hash(hasher: Hasher32);
+}
+
+impl Hash for i32 {
+    pub fn hash(hasher: Hasher32) {
+        hasher.write_i32(self);
+    }
+}
+
+impl Hash for i64 {
+    pub fn hash(hasher: Hasher32) {
+        hasher.write_i64(self);
+    }
+}
+
+impl Hash for str {
+    pub fn hash(hasher: Hasher32) {
+        hasher.write_str(self);
+    }
+}

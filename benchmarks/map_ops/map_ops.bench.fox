@@ -1,0 +1,47 @@
+use std::collections::{Map, Option};
+
+pub fn bench_map_ops(): i32 {
+    let m: Map<str, i32> = Map<str, i32>::with_capacity(64);
+    m.set("alpha", 1);
+    m.set("beta", 2);
+    m.set("gamma", 3);
+    m.set("delta", 4);
+    m.set("epsilon", 5);
+    m.set("zeta", 6);
+    m.set("eta", 7);
+    m.set("theta", 8);
+    m.set("iota", 9);
+    m.set("kappa", 10);
+
+    let sum: i32 = 0;
+    let i: i32 = 0;
+    while i < 200 {
+        let opt_a: Option<i32> = m.get("alpha");
+        match opt_a {
+            Some(val) => { sum = sum + val; },
+            None() => {},
+        };
+        let opt_c: Option<i32> = m.get("gamma");
+        match opt_c {
+            Some(val) => { sum = sum + val * 2; },
+            None() => {},
+        };
+        let opt_e: Option<i32> = m.get("epsilon");
+        match opt_e {
+            Some(val) => { sum = sum + val * 3; },
+            None() => {},
+        };
+        if m.has("zeta") {
+            sum = sum + 6;
+        }
+        if m.has("missing") {
+            sum = sum + 1000;
+        }
+
+        m.set("alpha", sum % 256);
+        m.set("kappa", i);
+
+        i = i + 1;
+    }
+    return sum + m.len();
+}

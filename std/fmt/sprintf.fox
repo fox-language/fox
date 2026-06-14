@@ -1,0 +1,18 @@
+// std::fmt - String formatting
+//
+// Provides `sprintf`, a C-style format function that supports variadic args.
+//
+// Supported format specifiers:
+//   %s - str
+//   %d, %i - i32 (and other integers)
+//   %f - f32/f64
+//   %b - bool
+//   %x - i32 hex
+//   %o - i32 octal
+//   %% - literal percent
+//
+// Example:
+//   let name: str = "World";
+//   let msg: str = sprintf("Hello, %s", name);
+
+pub compiler fn sprintf(fmt: str, ...args: anyref): str;

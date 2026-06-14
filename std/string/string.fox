@@ -1,0 +1,30 @@
+// std::string - String manipulation utilities
+//
+// The inherent methods on the `str` builtin (len, char_at, starts_with, ...)
+// are declared in `std::builtin` and are always available on `str` values
+// without an explicit import.
+
+pub struct StringSlice {
+    source: str;
+    start: i32;
+    end: i32;
+}
+
+impl StringSlice {
+    pub static fn new(s: str, start: i32, end: i32): StringSlice {
+        return StringSlice {
+            source: s,
+            start: start,
+            end: end
+        };
+    }
+
+    pub fn len(): i32 {
+        return self.end - self.start;
+    }
+
+    pub fn char_at(index: i32): byte {
+        let b: byte = self.source.char_at(self.start + index);
+        return b;
+    }
+}

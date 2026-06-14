@@ -1,0 +1,14 @@
+use std::global::{Console};
+
+pub fn test_console_apis() {
+    Console::log("test log");
+    Console::info("test info");
+    Console::warn("test warn");
+    Console::error("test error");
+    Console::debug("test debug");
+    Console::logf("test logf %d", 1);
+    Console::infof("test infof %d", 2);
+    Console::warnf("test warnf %d", 3);
+    Console::errorf("test errorf %d", 4);
+    Console::debugf("test debugf %d", 5);
+}

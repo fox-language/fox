@@ -1,0 +1,6 @@
+use std::global::{Performance};
+
+pub fn test_performance_api() {
+    let t1: f64 = Performance::now();
+    let t2: f64 = Performance::now();
+}
