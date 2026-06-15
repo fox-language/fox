@@ -49,8 +49,16 @@ fn substitute_expr_typed(expr: &Expr, generic_name: &str, replacement: &Type) ->
             )
         }
         Expr::Call(name, args) => {
-            let name_ty = Type::from_str(name).unwrap_or(Type::GenericParam(name.clone()));
-            let subbed_name = name_ty.substitute(generic_name, replacement).to_string();
+            let subbed_name = if let Some(idx) = name.rfind("::") {
+                let struct_part = &name[..idx];
+                let method_part = &name[idx..]; // includes "::"
+                let struct_ty = Type::from_str(struct_part).unwrap_or(Type::GenericParam(struct_part.to_string()));
+                let subbed_struct = struct_ty.substitute(generic_name, replacement).to_string();
+                format!("{}{}", subbed_struct, method_part)
+            } else {
+                let name_ty = Type::from_str(name).unwrap_or(Type::GenericParam(name.clone()));
+                name_ty.substitute(generic_name, replacement).to_string()
+            };
             Expr::Call(
                 subbed_name,
                 args.iter()
@@ -289,8 +297,16 @@ pub fn remap_expr(expr: &Expr, map: &std::collections::HashMap<String, String>) 
             args.iter().map(|a| remap_expr(a, map)).collect(),
         ),
         Expr::Call(name, args) => {
-            let name_ty = Type::from_str(name).unwrap_or(Type::GenericParam(name.clone()));
-            let remap_name = remap_type(&name_ty, map).to_string();
+            let remap_name = if let Some(idx) = name.rfind("::") {
+                let struct_part = &name[..idx];
+                let method_part = &name[idx..]; // includes "::"
+                let struct_ty = Type::from_str(struct_part).unwrap_or(Type::GenericParam(struct_part.to_string()));
+                let subbed_struct = remap_type(&struct_ty, map).to_string();
+                format!("{}{}", subbed_struct, method_part)
+            } else {
+                let name_ty = Type::from_str(name).unwrap_or(Type::GenericParam(name.clone()));
+                remap_type(&name_ty, map).to_string()
+            };
             Expr::Call(remap_name, args.iter().map(|a| remap_expr(a, map)).collect())
         }
         Expr::If(cond, then_b, else_b) => {

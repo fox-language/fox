@@ -2,6 +2,7 @@ use std::global::{Document, Element, Console};
 use std::collections::{Option};
 use std::fmt;
 use self::fw;
+use self::fw::{Div};
 
 fn main() {
     if let Some(app_el) = Document::query_selector("body") {
@@ -26,26 +27,6 @@ fn counter(): Element {
     btn.set_text_content("Increment");
     btn.on_click(() => count.update((v: i32): i32 => v + 1));
     app_el.append_child(btn);
+    app_el.append_child(Div::new().class("foo").text_content("bar"));
     return app_el;
-
-
-    // return Div {
-    //     class: "foo",
-    //     children: [
-    //         P {
-    //             text_content: "bar",
-    //             on_click: (e: Event) => count.update((v: i32): i32 => v + 1),
-    //         },
-    //     ],
-    // };
-
-    // return Div::new({
-    //     class: "foo",
-    //     children: [
-    //         P::new({
-    //             text_content: "bar",
-    //             on_click: (e: Event) => count.update((v: i32): i32 => v + 1),
-    //         }),
-    //     ],
-    // });
 }

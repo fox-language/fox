@@ -71,13 +71,98 @@ pub fn resolve_const_name(name: &str) -> Option<String> {
     })
 }
 
-pub fn emit_widening(_wat: &mut String, actual_ty: &str, expected_ty: &str) {
-    let is_actual_64 = actual_ty == "i64" || actual_ty == "u64";
-    let is_expected_64 = expected_ty == "i64" || expected_ty == "u64";
-    let is_actual_32 = actual_ty == "i32" || actual_ty == "u32" || actual_ty == "byte" || actual_ty == "bool";
-    let is_expected_32 = expected_ty == "i32" || expected_ty == "u32" || expected_ty == "byte" || expected_ty == "bool";
+pub fn clean_type(ty: &str, structs: &HashMap<String, StructDef>) -> String {
+    if ty.starts_with("[]") {
+        return format!("[]{}", clean_type(&ty[2..], structs));
+    }
+    resolve_struct_name(ty, structs)
+}
 
+pub fn canonical_type(ty: &Type) -> Type {
+    match ty {
+        Type::Struct(name, args) => {
+            let stripped_name = name.split("::").last().unwrap_or(name).to_string();
+            let canonical_args = args.iter().map(|arg| canonical_type(arg)).collect();
+            Type::Struct(stripped_name, canonical_args)
+        }
+        Type::Array(inner) => Type::Array(Box::new(canonical_type(inner))),
+        Type::Tuple(elems) => Type::Tuple(elems.iter().map(|el| canonical_type(el)).collect()),
+        Type::Function(params, ret) => {
+            Type::Function(
+                params.iter().map(|p| canonical_type(p)).collect(),
+                Box::new(canonical_type(ret)),
+            )
+        }
+        _ => ty.clone(),
+    }
+}
+
+pub fn canonical_type_string(ty_str: &str) -> String {
+    use std::str::FromStr;
+    if let Ok(ty) = Type::from_str(ty_str) {
+        let canonical_ty = canonical_type(&ty);
+        let s = canonical_ty.to_string();
+        s.replace('<', "_").replace('>', "").replace(',', "_").replace(" ", "")
+    } else {
+        ty_str.to_string()
+    }
+}
+
+pub fn is_compatible(actual: &str, expected: &str, structs: &HashMap<String, StructDef>) -> bool {
+    if expected == "unknown" || actual == "unknown" {
+        return true;
+    }
+    if expected == "anyref" || actual == "anyref" {
+        return true;
+    }
+    if expected == actual {
+        return true;
+    }
+    if actual == "fn(...)" && expected.starts_with("fn(") {
+        return true;
+    }
+
+    let is_actual_64 = actual == "i64" || actual == "u64";
+    let is_expected_64 = expected == "i64" || expected == "u64";
+    if is_actual_64 && is_expected_64 {
+        return true;
+    }
+
+    let is_actual_32 = actual == "i32" || actual == "u32" || actual == "byte" || actual == "bool";
+    let is_expected_32 = expected == "i32" || expected == "u32" || expected == "byte" || expected == "bool";
+    if is_actual_32 && is_expected_32 {
+        return true;
+    }
+
+    // Float widening/narrowing is always allowed
+    if (actual == "f32" || actual == "f64") && (expected == "f32" || expected == "f64") {
+        return true;
+    }
+    // Integer widening/narrowing is NOT allowed (original emit_widening behavior)
     if (is_expected_64 && is_actual_32) || (is_expected_32 && is_actual_64) {
+        return false;
+    }
+
+    let canon_expected = canonical_type_string(expected);
+    let canon_actual = canonical_type_string(actual);
+    if canon_expected == canon_actual {
+        return true;
+    }
+
+    let resolved_expected = clean_type(expected, structs);
+    let resolved_actual = clean_type(actual, structs);
+    if clean_type(&resolved_expected, structs) == clean_type(&resolved_actual, structs) {
+        return true;
+    }
+    if canonical_type_string(&resolved_expected) == canonical_type_string(&resolved_actual) {
+        return true;
+    }
+
+    false
+}
+
+pub fn emit_widening(_wat: &mut String, actual_ty: &str, expected_ty: &str, structs: &HashMap<String, StructDef>) {
+    if !is_compatible(actual_ty, expected_ty, structs) {
         crate::diagnostics::report_error(format!("Type mismatch: expected '{}', found '{}'", expected_ty, actual_ty), None);
     }
 }
@@ -200,6 +285,20 @@ pub fn sanitize_name(s: &str) -> String {
      .replace(" ", "")
 }
 
+pub fn strip_mangled_namespaces(s: &str) -> String {
+    let segments: Vec<&str> = s.split(|c| c == ':' || c == '_').filter(|seg| !seg.is_empty()).collect();
+    let mut kept = Vec::new();
+    for seg in segments {
+        let first_char = seg.chars().next();
+        let is_uppercase = first_char.map(|c| c.is_ascii_uppercase()).unwrap_or(false);
+        let is_primitive = matches!(seg, "i32" | "i64" | "u32" | "u64" | "f32" | "f64" | "str" | "void" | "byte" | "bool" | "anyref" | "externref" | "tuple" | "Slice");
+        if is_uppercase || is_primitive {
+            kept.push(seg);
+        }
+    }
+    kept.join("_")
+}
+
 pub fn resolve_struct_name(name: &str, structs: &HashMap<String, StructDef>) -> String {
     let normalized_name = if let Some(start) = name.find('<') {
         if let Some(end) = name.rfind('>') {
@@ -222,6 +321,14 @@ pub fn resolve_struct_name(name: &str, structs: &HashMap<String, StructDef>) -> 
 
     if structs.contains_key(&normalized_name) {
         return normalized_name;
+    }
+
+    for key in structs.keys() {
+        let stripped_key = strip_mangled_namespaces(key);
+        let stripped_norm = strip_mangled_namespaces(&normalized_name);
+        if stripped_key == stripped_norm {
+            return key.clone();
+        }
     }
 
     let base_name_str = if let Some(start) = name.find('<') {
@@ -262,6 +369,40 @@ pub fn resolve_struct_name(name: &str, structs: &HashMap<String, StructDef>) -> 
     if possible_matches.len() == 1 {
         return possible_matches[0].clone();
     }
+
+    // Fallback: when generic params make the mangled name unmatchable,
+    // try matching by base name (without generic args).
+    // e.g. "vec::Vec<fn():void>" should resolve to "vec::Vec"
+    if name.contains('<') {
+        let mut base_possible = Vec::new();
+        for key in structs.keys() {
+            if key == base_name || key.ends_with(&format!("::{}", base_name)) || base_name.ends_with(&format!("::{}", key)) {
+                base_possible.push(key.clone());
+            }
+        }
+        if base_possible.len() == 1 {
+            return base_possible[0].clone();
+        }
+        if !base_possible.is_empty() {
+            let target_ns = get_namespace(&base_possible[0]);
+            if target_ns == current_ns && current_ns != "" {
+                return base_possible[0].clone();
+            }
+            let is_imported = IMPORTS_REGISTRY.with(|reg| {
+                let r = reg.borrow();
+                if let Some(imported) = r.get(&current_ns) {
+                    let root = base_name.split("::").next().unwrap_or(base_name);
+                    imported.contains(root)
+                } else {
+                    false
+                }
+            });
+            if is_imported {
+                return base_possible[0].clone();
+            }
+        }
+    }
+
     normalized_name
 }
 
@@ -372,6 +513,15 @@ pub fn resolve_func_name_impl(
         resolved_name_str = format!("{}::{}", resolved_struct, method_part);
         if funcs.contains_key(&resolved_name_str) {
             return resolved_name_str;
+        }
+        // Fallback: match by parent_struct + method name
+        // e.g. "vec::Vec::new" should find "vec::Vec<T>::new"
+        for (k, f) in funcs {
+            if let Some(ref ps) = f.parent_struct {
+                if ps == &resolved_struct && k.ends_with(&format!("::{}", method_part)) {
+                    return k.clone();
+                }
+            }
         }
     }
 
@@ -897,6 +1047,10 @@ fn infer_expr_type(expr: &Expr, env: &HashMap<String, String>) -> String {
         Expr::Identifier(n) => {
             if let Some(t) = env.get(n) {
                 t.clone()
+            } else if let Some(resolved) = resolve_const_name(n) {
+                GLOBAL_CONSTS.with(|gc| {
+                    gc.borrow().get(&resolved).cloned().unwrap_or_else(|| "i32".to_string())
+                })
             } else {
                 "i32".to_string()
             }

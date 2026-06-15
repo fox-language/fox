@@ -22,7 +22,7 @@ pub fn generate_expr(
                 if expected_ty == "anyref" && actual_ty != "anyref" {
                     emit_box_to_anyref(&actual_ty, wat, funcs, structs);
                 } else {
-                    emit_widening(wat, &actual_ty, expected_ty);
+                    emit_widening(wat, &actual_ty, expected_ty, structs);
                 }
             } else if let Some(resolved) = resolve_const_name(n) {
                 let const_ty = GLOBAL_CONSTS.with(|gc| {
@@ -33,14 +33,14 @@ pub fn generate_expr(
                 if expected_ty == "anyref" && const_ty != "anyref" {
                     emit_box_to_anyref(&const_ty, wat, funcs, structs);
                 } else {
-                    emit_widening(wat, &const_ty, expected_ty);
+                    emit_widening(wat, &const_ty, expected_ty, structs);
                 }
             } else {
                 wat.push_str(&format!("    local.get ${}\n", n));
                 if expected_ty == "anyref" {
                     emit_box_to_anyref("i32", wat, funcs, structs);
                 } else {
-                    emit_widening(wat, "i32", expected_ty);
+                    emit_widening(wat, "i32", expected_ty, structs);
                 }
             }
         }
@@ -233,7 +233,7 @@ pub fn generate_expr(
             if expected_ty == "anyref" && actual_ty != "anyref" {
                 emit_box_to_anyref(&actual_ty, wat, funcs, structs);
             } else {
-                emit_widening(wat, &actual_ty, expected_ty);
+                emit_widening(wat, &actual_ty, expected_ty, structs);
             }
         }
         Expr::FieldAccess(obj, f_name) => {
@@ -342,8 +342,17 @@ pub fn generate_expr(
                 }
             }
             emit_call(name, args, sym, wat, funcs, structs, string_lit_ids, loop_idx, varr_depth, false, expected_ty);
-            let actual_ty = get_expr_type(expr, sym, funcs, structs);
-            emit_widening(wat, &actual_ty, expected_ty);
+            let mut arg_types = Vec::new();
+            for arg in args {
+                arg_types.push(get_expr_type(arg, sym, funcs, structs));
+            }
+            let actual_func_name = resolve_func_name_with_expected(name, &arg_types, expected_ty, funcs, structs);
+            let actual_ty = if let Some(f) = funcs.get(&actual_func_name) {
+                f.return_ty.to_string()
+            } else {
+                get_expr_type(expr, sym, funcs, structs)
+            };
+            emit_widening(wat, &actual_ty, expected_ty, structs);
         }
         Expr::If(cond, then_b, else_b) => {
             let (then_stmts, then_val) = &**then_b;
@@ -604,7 +613,7 @@ pub fn generate_expr(
             if expected_ty == "anyref" && result_ty != "anyref" {
                 emit_box_to_anyref(&result_ty, wat, funcs, structs);
             } else {
-                emit_widening(wat, &result_ty, expected_ty);
+                emit_widening(wat, &result_ty, expected_ty, structs);
             }
         }
         Expr::Closure(_) => panic!("Closures should be lifted before code generation"),
@@ -677,7 +686,7 @@ pub fn generate_expr(
                     return_ty = inner[idx+2..].to_string();
                 }
             }
-            emit_widening(wat, &return_ty, expected_ty);
+            emit_widening(wat, &return_ty, expected_ty, structs);
         }
         Expr::Cast(e, target_ty) => {
             let actual_ty = get_expr_type(e, sym, funcs, structs);

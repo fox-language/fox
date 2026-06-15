@@ -567,4 +567,36 @@ pub fn test_error(): void {
             }
         }
     });
+
+    test("fails when passing invalid type to method call argument", () => {
+        const errorTestFile = path.join(outDir, "error_test.fox");
+        fs.writeFileSync(errorTestFile, `
+use std::global::{Element, Document};
+
+pub struct Div {
+    ref: Element;
+}
+
+pub fn test_error(): void {
+    let app_el = Document::create_element("div");
+    let d = Div { ref: Document::create_element("div") };
+    app_el.append_child(d);
+}
+`);
+        try {
+            execSync(`cargo run -- "${errorTestFile}" -o "${outDir}"`, {
+                stdio: 'pipe',
+            });
+            throw new Error("Compilation should have failed but succeeded");
+        } catch (err) {
+            const stderr = err.stderr ? err.stderr.toString() : err.message;
+            if (!stderr.includes("Type mismatch: expected 'dom::Element', found 'Div'")) {
+                throw new Error(`Unexpected compiler output: ${stderr}`);
+            }
+        } finally {
+            if (fs.existsSync(errorTestFile)) {
+                fs.unlinkSync(errorTestFile);
+            }
+        }
+    });
 });

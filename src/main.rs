@@ -697,6 +697,36 @@ fn main() {
         }
     }
 
+    // ==========================================
+    // Phase 3b: Type-check all function bodies (including private functions
+    // that will be dead-code-eliminated before codegen)
+    // ==========================================
+    {
+        // Populate GLOBAL_CONSTS so const references resolve correctly
+        crate::codegen::GLOBAL_CONSTS.with(|gc| {
+            let mut map = gc.borrow_mut();
+            map.clear();
+            for c in &parsed_consts {
+                map.insert(c.name.clone(), c.ty.to_string());
+            }
+        });
+        let mut structs_map = HashMap::new();
+        for s in &parsed_structs {
+            structs_map.insert(s.name.clone(), s.clone());
+        }
+        let mut funcs_map = HashMap::new();
+        for f in &parsed_funcs {
+            funcs_map.insert(f.name.clone(), f.clone());
+        }
+        for f in &parsed_funcs {
+            crate::type_checker::validate_call_types_in_func(f, &funcs_map, &structs_map);
+        }
+        if crate::diagnostics::has_errors() {
+            crate::diagnostics::print_diagnostics();
+            std::process::exit(1);
+        }
+    }
+
     for f in &mut parsed_funcs {
         optimizer::inline_closures_in_function(f);
     }
@@ -1376,7 +1406,7 @@ fn qualify_type(ty: &Type, current_ns: &str, structs: &HashMap<String, StructDef
 }
 
 fn qualify_stmt(stmt: &Stmt, current_ns: &str, structs: &HashMap<String, StructDef>) -> Stmt {
-    match stmt {
+    let result = match stmt {
         Stmt::Let(name, ty_opt, expr) => {
             let new_ty = ty_opt.as_ref().map(|t| qualify_type(t, current_ns, structs));
             Stmt::Let(name.clone(), new_ty, qualify_expr(expr, current_ns, structs))
@@ -1414,11 +1444,15 @@ fn qualify_stmt(stmt: &Stmt, current_ns: &str, structs: &HashMap<String, StructD
             let new_body = body.iter().map(|s| qualify_stmt(s, current_ns, structs)).collect();
             Stmt::For(loop_var.clone(), target.clone(), new_body)
         }
+    };
+    if let Some(span) = get_span(stmt) {
+        register_span(&result, span);
     }
+    result
 }
 
 fn qualify_expr(expr: &Expr, current_ns: &str, structs: &HashMap<String, StructDef>) -> Expr {
-    match expr {
+    let result = match expr {
         Expr::Binary(l, op, r) => Expr::Binary(
             Box::new(qualify_expr(l, current_ns, structs)),
             *op,
@@ -1534,5 +1568,9 @@ fn qualify_expr(expr: &Expr, current_ns: &str, structs: &HashMap<String, StructD
             pairs.iter().map(|(k, v)| (qualify_expr(k, current_ns, structs), qualify_expr(v, current_ns, structs))).collect()
         ),
         _ => expr.clone(),
+    };
+    if let Some(span) = get_span(expr) {
+        register_span(&result, span);
     }
+    result
 }
