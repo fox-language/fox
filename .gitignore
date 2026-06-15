@@ -4,3 +4,6 @@ node_modules
 /.fox-benchs
 /benchmarks/**/target
 *.vsix
+examples/build/*.js
+examples/build/*.wasm
+examples/build/*.wat

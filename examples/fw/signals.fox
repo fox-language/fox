@@ -66,10 +66,9 @@ pub fn effect(f: (): Option<()>) {
 fn run_effect(ef: Effect) {
     let prev = current_effect;
     current_effect = Option<Effect>::Some(ef);
-    match ef.run() {
-        Some(td) => ef.teardowns.push(td),
-        None() => {},
-    };
+    if let Some(td) = ef.run() {
+        ef.teardowns.push(td);
+    }
     current_effect = prev;
 }
 

@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WASM</title>
+</head>
+<body>
+    <script type="module">
+        import { fox } from "./main.js";
+        
+        try {
+            const { exports } = await fox("main.wasm", {});
+            await exports.main.promising();
+        } catch (err) {
+            document.body.innerHTML = `
+                <div>
+                    <h1>Initialization Error</h1>
+                    <p>Failed to load the WebAssembly application.</p>
+                    <p>${err.message}</p>
+                </div>
+            `;
+        }
+    </script>
+</body>
+</html>
