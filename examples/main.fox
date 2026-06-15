@@ -27,6 +27,6 @@ fn counter(): Element {
     btn.set_text_content("Increment");
     btn.on_click(() => count.update((v: i32): i32 => v + 1));
     app_el.append_child(btn);
-    app_el.append_child(Div::new().class("foo").text_content("bar"));
+    // app_el.append_child(Div::new().class("foo").text_content("bar"));
     return app_el;
 }
