@@ -23,7 +23,7 @@ fn build_nav(parent: Element) {
 
     let logo = Document::create_element("a");
     logo.set_attribute("class", "logo");
-    logo.set_attribute("href", "/");
+    logo.set_attribute("href", "https://fox-language.github.io/fox/");
     logo.set_text_content("Fox");
     inner.append_child(logo);
 
