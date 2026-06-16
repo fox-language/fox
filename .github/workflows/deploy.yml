@@ -23,6 +23,9 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Install wasm-opt
+        run: sudo apt-get update && sudo apt-get install -y binaryen
+
       - name: Build fox compiler
         run: cargo build --release
 
@@ -30,7 +33,7 @@ jobs:
         run: |
           export FOX_PATH="$PWD"
           export PATH="$PWD/target/release:$PATH"
-          fox docs/main.fox -o docs/
+          fox docs/main.fox -o docs/ -O3
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
