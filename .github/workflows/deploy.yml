@@ -38,7 +38,7 @@ jobs:
           fox docs/main.fox -o docs/ -O3
 
       - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v7
+        uses: actions/upload-pages-artifact@v5
         with:
           path: docs
 
