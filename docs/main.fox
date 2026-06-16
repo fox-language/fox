@@ -1,15 +1,14 @@
 use std::global::{Document, Element, Console};
 use std::collections::{Option};
 use std::fmt;
-use self::fw;
-use self::fw::{Div};
+use self::reactive;
 
 fn main() {
     if let Some(body) = Document::query_selector("body") {
         build_nav(body);
         build_hero(body);
-        build_features(body);
         build_example(body);
+        build_features(body);
         build_install(body);
         build_quick_example(body);
         build_footer(body);
@@ -34,7 +33,7 @@ fn build_nav(parent: Element) {
     links.append_child(nav_link("#features", "Features"));
     links.append_child(nav_link("#example", "Example"));
     links.append_child(nav_link("#install", "Install"));
-    links.append_child(nav_link("https://github.com/anomalyco/fox", "GitHub"));
+    links.append_child(ext_link("https://github.com/fox-language/fox", "GitHub"));
     inner.append_child(links);
 
     nav.append_child(inner);
@@ -44,6 +43,15 @@ fn build_nav(parent: Element) {
 fn nav_link(href: str, text: str): Element {
     let a = Document::create_element("a");
     a.set_attribute("href", href);
+    a.set_text_content(text);
+    return a;
+}
+
+fn ext_link(href: str, text: str): Element {
+    let a = Document::create_element("a");
+    a.set_attribute("href", href);
+    a.set_attribute("target", "_blank");
+    a.set_attribute("rel", "noopener noreferrer");
     a.set_text_content(text);
     return a;
 }
@@ -67,7 +75,7 @@ fn build_hero(parent: Element) {
     let btns = Document::create_element("div");
     btns.set_attribute("class", "hero-buttons");
     btns.append_child(make_btn("Get Started", "btn btn-primary", "#install"));
-    btns.append_child(make_btn("View on GitHub", "btn btn-secondary", "https://github.com/anomalyco/fox"));
+    btns.append_child(ext_btn("View on GitHub", "btn btn-secondary", "https://github.com/fox-language/fox"));
     inner.append_child(btns);
 
     hero.append_child(inner);
@@ -82,45 +90,14 @@ fn make_btn(text: str, cls: str, href: str): Element {
     return a;
 }
 
-fn build_features(parent: Element) {
-    let section = Document::create_element("section");
-    section.set_attribute("class", "features");
-    section.set_attribute("id", "features");
-
-    let container = Document::create_element("div");
-    container.set_attribute("class", "container");
-
-    let h2 = Document::create_element("h2");
-    h2.set_text_content("Why Fox?");
-    container.append_child(h2);
-
-    let grid = Document::create_element("div");
-    grid.set_attribute("class", "feature-grid");
-    grid.append_child(feature_card("Wasm Native", "Compiles directly to WebAssembly using Wasm GC. No JavaScript runtime required."));
-    grid.append_child(feature_card("Static Typing", "Full static type system with generics, traits, and pattern matching."));
-    grid.append_child(feature_card("Simple Syntax", "Clean, familiar syntax. Structs, methods, closures, and pattern matching."));
-    grid.append_child(feature_card("Garbage Collected", "Uses WebAssembly native GC. No manual memory management."));
-    grid.append_child(feature_card("Standard Library", "Collections, math, crypto, DOM access, and more."));
-    grid.append_child(feature_card("Reactive by Default", "Built-in signals system makes reactive UIs natural and efficient."));
-    container.append_child(grid);
-
-    section.append_child(container);
-    parent.append_child(section);
-}
-
-fn feature_card(title: str, desc: str): Element {
-    let card = Document::create_element("div");
-    card.set_attribute("class", "feature");
-
-    let h3 = Document::create_element("h3");
-    h3.set_text_content(title);
-    card.append_child(h3);
-
-    let p = Document::create_element("p");
-    p.set_text_content(desc);
-    card.append_child(p);
-
-    return card;
+fn ext_btn(text: str, cls: str, href: str): Element {
+    let a = Document::create_element("a");
+    a.set_attribute("class", cls);
+    a.set_attribute("href", href);
+    a.set_attribute("target", "_blank");
+    a.set_attribute("rel", "noopener noreferrer");
+    a.set_text_content(text);
+    return a;
 }
 
 fn build_example(parent: Element) {
@@ -148,41 +125,81 @@ fn build_example(parent: Element) {
     tab_main.set_text_content("main.fox");
     tabs.append_child(tab_main);
 
-    let tab_signals = Document::create_element("button");
-    tab_signals.set_attribute("class", "tab");
-    tab_signals.set_text_content("fw/signals.fox");
-    tabs.append_child(tab_signals);
+    let tab_reactive = Document::create_element("button");
+    tab_reactive.set_attribute("class", "tab");
+    tab_reactive.set_text_content("reactive/signals.fox");
+    tabs.append_child(tab_reactive);
 
     container.append_child(tabs);
 
-    let code_main = Document::create_element("div");
+    let code_main = Document::create_element("pre");
     code_main.set_attribute("class", "code-block");
     code_main.set_attribute("id", "tab-main");
     code_main.set_text_content(code_main_text());
     container.append_child(code_main);
 
-    let code_signals = Document::create_element("div");
-    code_signals.set_attribute("class", "code-block hidden");
-    code_signals.set_attribute("id", "tab-signals");
-    code_signals.set_text_content(code_signals_text());
-    container.append_child(code_signals);
+    let code_reactive = Document::create_element("pre");
+    code_reactive.set_attribute("class", "code-block hidden");
+    code_reactive.set_attribute("id", "tab-signals");
+    code_reactive.set_text_content(code_signals_text());
+    container.append_child(code_reactive);
 
     tab_main.on_click(() => {
         tab_main.set_attribute("class", "tab active");
-        tab_signals.set_attribute("class", "tab");
+        tab_reactive.set_attribute("class", "tab");
         code_main.set_attribute("class", "code-block");
-        code_signals.set_attribute("class", "code-block hidden");
+        code_reactive.set_attribute("class", "code-block hidden");
     });
 
-    tab_signals.on_click(() => {
+    tab_reactive.on_click(() => {
         tab_main.set_attribute("class", "tab");
-        tab_signals.set_attribute("class", "tab active");
+        tab_reactive.set_attribute("class", "tab active");
         code_main.set_attribute("class", "code-block hidden");
-        code_signals.set_attribute("class", "code-block");
+        code_reactive.set_attribute("class", "code-block");
     });
 
     section.append_child(container);
     parent.append_child(section);
+}
+
+fn build_features(parent: Element) {
+    let section = Document::create_element("section");
+    section.set_attribute("class", "features");
+    section.set_attribute("id", "features");
+
+    let container = Document::create_element("div");
+    container.set_attribute("class", "container");
+
+    let h2 = Document::create_element("h2");
+    h2.set_text_content("Why Fox?");
+    container.append_child(h2);
+
+    let grid = Document::create_element("div");
+    grid.set_attribute("class", "feature-grid");
+    grid.append_child(feature_card("Wasm Native", "Compiles directly to WebAssembly using Wasm GC. No JavaScript runtime required."));
+    grid.append_child(feature_card("Static Typing", "Full static type system with generics, traits, and pattern matching."));
+    grid.append_child(feature_card("Simple Syntax", "Clean, familiar syntax. Structs, methods, closures, and pattern matching."));
+    grid.append_child(feature_card("Garbage Collected", "Uses WebAssembly native GC. No manual memory management."));
+    grid.append_child(feature_card("Standard Library", "Collections, math, crypto, DOM access, and more."));
+    container.append_child(grid);
+
+    section.append_child(container);
+    parent.append_child(section);
+}
+
+fn feature_card(title: str, desc: str): Element {
+    let card = Document::create_element("div");
+    card.set_attribute("class", "feature");
+
+    let h3 = Document::create_element("h3");
+    h3.set_text_content(title);
+    card.append_child(h3);
+
+    let p = Document::create_element("p");
+    p.set_text_content(desc);
+    card.append_child(p);
+
+    return card;
 }
 
 fn build_install(parent: Element) {
@@ -199,7 +216,7 @@ fn build_install(parent: Element) {
 
     let steps = Document::create_element("div");
     steps.set_attribute("class", "install-steps");
-    steps.append_child(install_step("1. Clone the repository", "git clone https://github.com/anomalyco/fox.git\ncd fox"));
+    steps.append_child(install_step("1. Clone the repository", "git clone https://github.com/fox-language/fox.git\ncd fox"));
     steps.append_child(install_step("2. Build the compiler", "cargo build --release"));
     steps.append_child(install_step("3. Add to PATH", "export PATH=\"$PWD/target/release:$PATH\""));
     steps.append_child(install_step("4. Compile your first program", "fox main.fox -o build/"));
@@ -249,7 +266,7 @@ fn build_quick_example(parent: Element) {
     sub.set_text_content("A minimal Fox program that compiles to WebAssembly.");
     container.append_child(sub);
 
-    let code_block = Document::create_element("div");
+    let code_block = Document::create_element("pre");
     code_block.set_attribute("class", "code-block");
     code_block.set_text_content(quick_example_text());
     container.append_child(code_block);
@@ -270,8 +287,8 @@ fn build_footer(parent: Element) {
 
     let links = Document::create_element("div");
     links.set_attribute("class", "footer-links");
-    links.append_child(nav_link("https://github.com/anomalyco/fox", "GitHub"));
-    links.append_child(nav_link("https://github.com/anomalyco/fox/issues", "Issues"));
+    links.append_child(ext_link("https://github.com/fox-language/fox", "GitHub"));
+    links.append_child(ext_link("https://github.com/fox-language/fox/issues", "Issues"));
     container.append_child(links);
 
     footer.append_child(container);
@@ -279,7 +296,7 @@ fn build_footer(parent: Element) {
 }
 
 fn code_main_text(): str {
-    return "use std::global::{Document, Element, Console};\nuse std::collections::{Option};\nuse std::fmt;\nuse self::fw;\nuse self::fw::{Div};\n\nfn main() {\n    if let Some(app_el) = Document::query_selector(\"body\") {\n        app_el.append_child(counter());\n    } else {\n        Console::log(\"Error: body element not found!\");\n    }\n}\n\nfn counter(): Element {\n    let app_el = Document::create_element(\"div\");\n    let count = fw::signal<i32>(0);\n    let display = Document::create_element(\"div\");\n    app_el.append_child(display);\n\n    fw::effect((): Option<()> => {\n        let current = count.get();\n        Console::log(fmt::sprintf(\"Count changed to %d\", current));\n        display.set_text_content(fmt::sprintf(\"Count: %d\", current));\n        return Option::Some(() => Console::log(\"cleanup!\"));\n    });\n\n    let btn = Document::create_element(\"button\");\n    btn.set_text_content(\"Increment\");\n    btn.on_click(() => count.update((v: i32): i32 => v + 1));\n    app_el.append_child(btn);\n\n    return app_el;\n}";
+    return "use std::global::{Document, Element, Console};\nuse std::collections::{Option};\nuse std::fmt;\nuse self::reactive;\n\nfn main() {\n    if let Some(app_el) = Document::query_selector(\"body\") {\n        app_el.append_child(counter());\n    } else {\n        Console::log(\"Error: body element not found!\");\n    }\n}\n\nfn counter(): Element {\n    let app_el = Document::create_element(\"div\");\n    let count = reactive::signal<i32>(0);\n    let display = Document::create_element(\"div\");\n    app_el.append_child(display);\n\n    reactive::effect((): Option<()> => {\n        let current = count.get();\n        Console::log(fmt::sprintf(\"Count changed to %d\", current));\n        display.set_text_content(fmt::sprintf(\"Count: %d\", current));\n        return Option::Some(() => Console::log(\"cleanup!\"));\n    });\n\n    let btn = Document::create_element(\"button\");\n    btn.set_text_content(\"Increment\");\n    btn.on_click(() => count.update((v: i32): i32 => v + 1));\n    app_el.append_child(btn);\n\n    return app_el;\n}";
 }
 
 fn code_signals_text(): str {
@@ -287,5 +304,5 @@ fn code_signals_text(): str {
 }
 
 fn quick_example_text(): str {
-    return "use std::global::Console;\n\nfn main() {\n    Console::log(\"Hello from Fox!\");\n\n    let x: i32 = 42;\n    let y: i32 = x * 2;\n    Console::log(fmt::sprintf(\"42 * 2 = %d\", y));\n}";
+    return "use std::global::Console;\nuse std::fmt;\n\nfn main() {\n    Console::log(\"Hello from Fox!\");\n\n    let x: i32 = 42;\n    let y: i32 = x * 2;\n    Console::log(fmt::sprintf(\"42 * 2 = %d\", y));\n}";
 }
