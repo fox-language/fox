@@ -729,24 +729,27 @@ pub fn generate_expr(
             if expected_ty.starts_with("Map<") || expected_ty.starts_with("Map_") || expected_ty.contains("Map") {
                 map_ty = expected_ty.to_string();
             }
-            let (k_ty, v_ty) = if map_ty.starts_with("Map<") {
-                if let Some(start) = map_ty.find('<') {
-                    if let Some(comma) = map_ty.find(',') {
-                        if let Some(end) = map_ty.find('>') {
-                            (map_ty[start+1..comma].trim().to_string(), map_ty[comma+1..end].trim().to_string())
-                        } else {
-                            ("str".to_string(), "anyref".to_string())
-                        }
+            let (k_ty, v_ty) = if let Some(start) = map_ty.find('<') {
+                if let Some(end) = map_ty.rfind('>') {
+                    let inner = &map_ty[start + 1..end];
+                    let parts = split_types(inner);
+                    if parts.len() >= 2 {
+                        (parts[0].clone(), parts[1..].join(","))
                     } else {
                         ("str".to_string(), "anyref".to_string())
                     }
                 } else {
                     ("str".to_string(), "anyref".to_string())
                 }
-            } else if map_ty.starts_with("Map_") {
-                let parts: Vec<&str> = map_ty.split('_').collect();
-                if parts.len() >= 3 {
-                    (parts[1].to_string(), parts[2..].join("_"))
+            } else if map_ty.contains("Map_") {
+                let base_name = map_ty.split("::").last().unwrap_or(&map_ty);
+                let parts: Vec<&str> = base_name.split('_').collect();
+                if let Some(pos) = parts.iter().position(|&p| p == "Map") {
+                    if pos + 2 < parts.len() {
+                        (parts[pos + 1].to_string(), parts[pos + 2..].join("_"))
+                    } else {
+                        ("str".to_string(), "anyref".to_string())
+                    }
                 } else {
                     ("str".to_string(), "anyref".to_string())
                 }
@@ -780,20 +783,21 @@ pub fn generate_expr(
             if expected_ty.starts_with("Vec<") || expected_ty.starts_with("Vec_") || expected_ty.contains("Vec") {
                 vec_ty = expected_ty.to_string();
             }
-            let el_ty = if vec_ty.starts_with("Vec<") {
-                if let Some(start) = vec_ty.find('<') {
-                    if let Some(end) = vec_ty.find('>') {
-                        vec_ty[start+1..end].trim().to_string()
-                    } else {
-                        "anyref".to_string()
-                    }
+            let el_ty = if let Some(start) = vec_ty.find('<') {
+                if let Some(end) = vec_ty.rfind('>') {
+                    vec_ty[start + 1..end].trim().to_string()
                 } else {
                     "anyref".to_string()
                 }
-            } else if vec_ty.starts_with("Vec_") {
-                let parts: Vec<&str> = vec_ty.split('_').collect();
-                if parts.len() >= 2 {
-                    parts[1..].join("_")
+            } else if vec_ty.contains("Vec_") {
+                let base_name = vec_ty.split("::").last().unwrap_or(&vec_ty);
+                let parts: Vec<&str> = base_name.split('_').collect();
+                if let Some(pos) = parts.iter().position(|&p| p == "Vec") {
+                    if pos + 1 < parts.len() {
+                        parts[pos + 1..].join("_")
+                    } else {
+                        "anyref".to_string()
+                    }
                 } else {
                     "anyref".to_string()
                 }
