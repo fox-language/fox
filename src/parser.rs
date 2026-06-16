@@ -489,10 +489,26 @@ impl<'a> Parser<'a> {
             _ => panic!("Expected constant or variable name, found {:?}", self.current_token),
         };
         self.advance();
-        self.expect(Token::Colon);
-        let ty = self.parse_type();
+        let ty = if self.current_token == Token::Colon {
+            self.advance();
+            self.parse_type()
+        } else {
+            Type::Anyref
+        };
         self.expect(Token::Assign);
         let value = self.parse_expr();
+        let ty = if matches!(ty, Type::Anyref) {
+            match &value {
+                Expr::StringLit(_) => Type::Str,
+                Expr::Bool(_) => Type::Bool,
+                Expr::Integer(_) | Expr::Float(_) => {
+                    panic!("Type annotation is required for numeric constant '{}'", name);
+                }
+                _ => panic!("Type annotation is required for constant '{}'", name),
+            }
+        } else {
+            ty
+        };
         self.expect(Token::Semicolon);
         let node = ConstDef {
             is_pub,

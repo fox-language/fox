@@ -205,7 +205,7 @@ fn build_quick_example(parent: Element) {
 
     let code_block = Document::create_element("pre");
     code_block.set_attribute("class", "code-block");
-    code_block.set_text_content(quick_example_text());
+    code_block.set_text_content(QUICK_EXAMPLE_TEXT);
     container.append_child(code_block);
 
     section.append_child(container);
@@ -232,6 +232,12 @@ fn build_footer(parent: Element) {
     parent.append_child(footer);
 }
 
-fn quick_example_text(): str {
-    return "use std::global::Console;\nuse std::fmt;\n\nfn main() {\n    Console::log(\"Hello from Fox!\");\n\n    let x: i32 = 42;\n    let y: i32 = x * 2;\n    Console::log(fmt::sprintf(\"42 * 2 = %d\", y));\n}";
-}
+const QUICK_EXAMPLE_TEXT = "use std::global::Console;
+use std::fmt;
+
+fn main() {
+    Console::log(\"Hello from Fox!\");
+    let x: i32 = 42;
+    let y: i32 = x * 2;
+    Console::log(fmt::sprintf(\"42 * 2 = %d\", y));
+}";

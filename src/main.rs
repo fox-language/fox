@@ -1308,7 +1308,7 @@ fn main() {
     crate::codegen::init_codegen_env(imports_registry.clone(), rename_aliases.clone());
     let optimized_funcs = dead_code_eliminate(optimized_funcs, &mono_structs, &parsed_consts);
 
-    let string_literals = collect_string_literals(&optimized_funcs);
+    let string_literals = collect_string_literals(&optimized_funcs, &parsed_consts);
 
     let mut variadic_funcs: HashMap<String, usize> = HashMap::new();
     for f in &optimized_funcs {

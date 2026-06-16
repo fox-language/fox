@@ -193,11 +193,20 @@ pub fn eval_const_val(expr: &Expr) -> f64 {
                 panic!("Unknown constant identifier: {}", n);
             }
         }
+        Expr::StringLit(_) => 0.0,
         _ => panic!("Unsupported expression in constant expression: {:?}", expr),
     }
 }
 
-pub fn eval_const_expr(expr: &Expr, ty: &str) -> String {
+pub fn eval_const_expr(expr: &Expr, ty: &str, string_lit_ids: &HashMap<String, String>) -> String {
+    if ty == "str" || ty == "externref" {
+        if let Expr::StringLit(s) = expr {
+            if let Some(id) = string_lit_ids.get(s) {
+                return format!("global.get ${}", id);
+            }
+        }
+    }
+
     if ty == "i64" {
         if let Expr::Integer(s) = expr {
             if let Ok(u) = s.parse::<u64>() {
@@ -232,7 +241,7 @@ pub fn eval_const_expr(expr: &Expr, ty: &str) -> String {
 
 pub fn is_const_expr(expr: &Expr, consts_map: &HashMap<String, ConstDef>) -> bool {
     match expr {
-        Expr::Integer(_) | Expr::Float(_) | Expr::Bool(_) => true,
+        Expr::Integer(_) | Expr::Float(_) | Expr::Bool(_) | Expr::StringLit(_) => true,
         Expr::Binary(l, op, r) => {
             matches!(op, Op::Add | Op::Sub | Op::Mul | Op::Div)
                 && is_const_expr(l, consts_map)

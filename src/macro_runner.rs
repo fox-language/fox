@@ -317,7 +317,7 @@ fn run_macros_inner(
         }
     }
 
-    let string_literals = crate::collect_string_literals(&macro_funcs);
+    let string_literals = crate::collect_string_literals(&macro_funcs, parsed_consts);
     
     let (wat_content, _filtered_structs) = crate::codegen::generate_wat(
         &macro_funcs,

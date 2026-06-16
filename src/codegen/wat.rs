@@ -1738,7 +1738,7 @@ pub fn generate_stmt(
     }
 }
 
-pub fn collect_string_literals(funcs: &[Function]) -> Vec<String> {
+pub fn collect_string_literals(funcs: &[Function], consts: &[ConstDef]) -> Vec<String> {
     let mut literals = std::collections::HashSet::new();
     fn visit_expr(expr: &Expr, literals: &mut std::collections::HashSet<String>) {
         match expr {
@@ -1793,6 +1793,9 @@ pub fn collect_string_literals(funcs: &[Function]) -> Vec<String> {
     }
     for f in funcs {
         for s in &f.body { visit_stmt(s, &mut literals); }
+    }
+    for c in consts {
+        visit_expr(&c.value, &mut literals);
     }
     let mut v: Vec<String> = literals.into_iter().collect();
     v.sort();
@@ -2579,7 +2582,7 @@ pub fn generate_wat(
             global_init_statements.push_str(&init_code);
             global_init_statements.push_str(&format!("    global.set ${}\n", safe_name));
         } else {
-            let init_wat = eval_const_expr(&c.value, &wasm_ty);
+            let init_wat = eval_const_expr(&c.value, &wasm_ty, &string_lit_ids);
             let val = eval_const_val(&c.value);
             GLOBAL_CONST_VALUES.with(|gcv| {
                 gcv.borrow_mut().insert(c.name.clone(), val);
