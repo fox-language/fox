@@ -483,31 +483,25 @@ enum Shape {
         }
     });
 
-    test("fails when struct instantiation is missing a field", () => {
-        const errorTestFile = path.join(outDir, "error_test.fox");
-        fs.writeFileSync(errorTestFile, `
+    test("allows struct instantiation to miss fields (defaulting to zero values)", () => {
+        const testFile = path.join(outDir, "struct_defaults_test.fox");
+        fs.writeFileSync(testFile, `
 struct Point {
     x: i32;
     y: i32;
 }
 
-pub fn test_error(): void {
+pub fn test_defaults(): void {
     let p = Point { x: 42 };
 }
 `);
         try {
-            execSync(`cargo run -- "${errorTestFile}" -o "${outDir}"`, {
+            execSync(`cargo run -- "${testFile}" -o "${outDir}"`, {
                 stdio: 'pipe',
             });
-            throw new Error("Compilation should have failed but succeeded");
-        } catch (err) {
-            const stderr = err.stderr ? err.stderr.toString() : err.message;
-            if (!stderr.includes("Missing field 'y' in instantiation of struct 'Point'")) {
-                throw new Error(`Unexpected compiler output: ${stderr}`);
-            }
         } finally {
-            if (fs.existsSync(errorTestFile)) {
-                fs.unlinkSync(errorTestFile);
+            if (fs.existsSync(testFile)) {
+                fs.unlinkSync(testFile);
             }
         }
     });

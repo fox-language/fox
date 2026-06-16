@@ -2,6 +2,41 @@ use std::collections::{HashMap, HashSet};
 use super::*;
 use super::intrinsics::*;
 
+pub fn generate_default_value_wat(
+    expected_ty: &str,
+    wat: &mut String,
+    structs: &HashMap<String, StructDef>,
+) {
+    if expected_ty == "i32" || expected_ty == "u32" || expected_ty == "bool" || expected_ty == "byte" {
+        wat.push_str("    i32.const 0\n");
+    } else if expected_ty == "i64" || expected_ty == "u64" {
+        wat.push_str("    i64.const 0\n");
+    } else if expected_ty == "f32" {
+        wat.push_str("    f32.const 0.0\n");
+    } else if expected_ty == "f64" {
+        wat.push_str("    f64.const 0.0\n");
+    } else if expected_ty == "str" || expected_ty == "externref" {
+        wat.push_str("    ref.null extern\n");
+    } else if expected_ty == "anyref" {
+        wat.push_str("    ref.null any\n");
+    } else if expected_ty.starts_with("[]") {
+        let inner = &expected_ty[2..];
+        let resolved_inner = resolve_struct_name(inner, structs);
+        wat.push_str(&format!("    ref.null $array_{}\n", sanitize_wat_name(&resolved_inner)));
+    } else if expected_ty.starts_with("fn(") {
+        let fat_name = fn_type_to_wasm_name(expected_ty);
+        let sig_name = format!("sig_{}", fat_name);
+        wat.push_str(&format!("    ref.null ${}\n    ref.null any\n    struct.new ${}\n", sig_name, fat_name));
+    } else {
+        let resolved = resolve_struct_name(expected_ty, structs);
+        if structs.contains_key(&resolved) {
+            wat.push_str(&format!("    ref.null ${}\n", sanitize_wat_name(&resolved)));
+        } else {
+            panic!("Cannot infer default value for type '{}'", expected_ty);
+        }
+    }
+}
+
 pub fn generate_expr(
     expr: &Expr,
     sym: &HashMap<String, String>,
@@ -86,34 +121,7 @@ pub fn generate_expr(
             if expected_ty == "unknown" || expected_ty.is_empty() {
                 panic!("Cannot infer type of default expression");
             }
-            if expected_ty == "i32" || expected_ty == "u32" || expected_ty == "bool" || expected_ty == "byte" {
-                wat.push_str("    i32.const 0\n");
-            } else if expected_ty == "i64" || expected_ty == "u64" {
-                wat.push_str("    i64.const 0\n");
-            } else if expected_ty == "f32" {
-                wat.push_str("    f32.const 0.0\n");
-            } else if expected_ty == "f64" {
-                wat.push_str("    f64.const 0.0\n");
-            } else if expected_ty == "str" || expected_ty == "externref" {
-                wat.push_str("    ref.null extern\n");
-            } else if expected_ty == "anyref" {
-                wat.push_str("    ref.null any\n");
-            } else if expected_ty.starts_with("[]") {
-                let inner = &expected_ty[2..];
-                let resolved_inner = resolve_struct_name(inner, structs);
-                wat.push_str(&format!("    ref.null $array_{}\n", sanitize_wat_name(&resolved_inner)));
-            } else if expected_ty.starts_with("fn(") {
-                let fat_name = fn_type_to_wasm_name(expected_ty);
-                let sig_name = format!("sig_{}", fat_name);
-                wat.push_str(&format!("    ref.null ${}\n    ref.null any\n    struct.new ${}\n", sig_name, fat_name));
-            } else {
-                let resolved = resolve_struct_name(expected_ty, structs);
-                if structs.contains_key(&resolved) {
-                    wat.push_str(&format!("    ref.null ${}\n", sanitize_wat_name(&resolved)));
-                } else {
-                    panic!("Cannot infer default value for type '{}'", expected_ty);
-                }
-            }
+            generate_default_value_wat(expected_ty, wat, structs);
         }
         Expr::MethodCall(obj, method, args) => {
             let obj_ty = get_expr_type(obj, sym, funcs, structs);
@@ -295,22 +303,7 @@ pub fn generate_expr(
                     if let Some((_, expr)) = fields.iter().find(|(n, _)| n == &s_field.name) {
                         generate_expr(expr, sym, &s_field.ty.to_string(), wat, funcs, structs, string_lit_ids, loop_idx, varr_depth);
                     } else {
-                        crate::diagnostics::report_error(
-                            format!("Missing field '{}' in instantiation of struct '{}'", s_field.name, s_name),
-                            crate::ast::get_span(expr),
-                        );
-                        let ty_str = s_field.ty.to_string();
-                        if ty_str == "i64" || ty_str == "u64" {
-                            wat.push_str("    i64.const 0\n");
-                        } else if ty_str == "f64" {
-                            wat.push_str("    f64.const 0.0\n");
-                        } else if ty_str == "f32" {
-                            wat.push_str("    f32.const 0.0\n");
-                        } else if ty_str == "i32" || ty_str == "u32" || ty_str == "byte" || ty_str == "bool" {
-                            wat.push_str("    i32.const 0\n");
-                        } else {
-                            wat.push_str("    ref.null any\n");
-                        }
+                        generate_default_value_wat(&s_field.ty.to_string(), wat, structs);
                     }
                 }
                 for (fname, fexpr) in fields {

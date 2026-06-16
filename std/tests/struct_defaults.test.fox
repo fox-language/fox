@@ -1,0 +1,40 @@
+use std::testing::{assert_eq};
+use std::collections::{Option};
+
+struct Nested {
+    val: i32;
+}
+
+struct TestStruct {
+    a: i32;
+    b: f64;
+    c: bool;
+    d: str;
+    e: Option<i32>;
+    f: []i32;
+    g: Nested;
+}
+
+pub fn test_struct_defaults() {
+    // Instantiate with only some fields set, rest should default
+    let s = TestStruct {
+        a: 42,
+        c: true,
+    };
+
+    assert_eq(42, s.a);
+    let approx_zero: bool = s.b == 0.0;
+    assert_eq(true, approx_zero);
+    assert_eq(true, s.c);
+
+    // Option defaults to null (default)
+    let is_null: bool = s.e == default;
+    assert_eq(true, is_null);
+
+    // References default to null
+    let f_is_null: bool = s.f == default;
+    assert_eq(true, f_is_null);
+
+    let g_is_null: bool = s.g == default;
+    assert_eq(true, g_is_null);
+}

@@ -137,7 +137,7 @@ struct Point {
     }
 }
 ```
-- **Instantiation:** Struct instances are created via curly brace initializers: `Point { x: 1.0, y: 2.0 }`. Every field defined in the struct must be explicitly initialized. Incomplete struct instantiation is a compile-time error.
+- **Instantiation:** Struct instances are created via curly brace initializers: `Point { x: 1.0, y: 2.0 }`. Fields can be omitted; any omitted fields are automatically initialized to their zero or default values (e.g., `0` for numeric types, `false` for booleans, `null`/`default` for references and arrays).
 - **Instance Methods:** Methods without the `static` keyword are instance methods. If the first parameter is named `self`, its type is automatically inferred as the parent struct type. Inside the method body, fields are accessed on `self`.
 - **Static Methods:** Associated functions called via `StructName::method_name(...)`.
 

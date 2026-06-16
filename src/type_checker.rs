@@ -78,14 +78,6 @@ pub fn get_expr_type(
         Expr::StructInit(n, fields) => {
             let resolved_name = resolve_struct_name(n, structs);
             if let Some(s) = structs.get(&resolved_name) {
-                for s_field in &s.fields {
-                    if !fields.iter().any(|(fname, _)| fname == &s_field.name) {
-                        crate::diagnostics::report_error(
-                            format!("Missing field '{}' in instantiation of struct '{}'", s_field.name, n),
-                            crate::ast::get_span(expr),
-                        );
-                    }
-                }
                 for (fname, fexpr) in fields {
                     if let Some(s_field) = s.fields.iter().find(|sf| &sf.name == fname) {
                         let actual_ty = safe_get_expr_type(fexpr, sym, funcs, structs);
