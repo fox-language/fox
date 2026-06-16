@@ -190,6 +190,7 @@ fn install_step(title: str, code: str): Element {
 fn build_quick_example(parent: Element) {
     let section = Document::create_element("section");
     section.set_attribute("class", "quick-example");
+    section.set_attribute("id", "example");
 
     let container = Document::create_element("div");
     container.set_attribute("class", "container");
