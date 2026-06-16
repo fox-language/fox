@@ -274,6 +274,12 @@ section h2 {
     border-radius: 6px;
 }
 
+/* Override Prism theme to match site */
+pre[class*="language-"],
+code[class*="language-"] {
+    background: var(--bg-code) !important;
+}
+
 /* Footer */
 footer {
     padding: 3rem 1.5rem;

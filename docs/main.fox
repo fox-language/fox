@@ -159,10 +159,10 @@ fn build_install(parent: Element) {
 
     let steps = Document::create_element("div");
     steps.set_attribute("class", "install-steps");
-    steps.append_child(install_step("1. Clone the repository", "git clone https://github.com/fox-language/fox.git\ncd fox"));
-    steps.append_child(install_step("2. Build the compiler", "cargo build --release"));
-    steps.append_child(install_step("3. Add to PATH", "export PATH=\"$PWD/target/release:$PATH\""));
-    steps.append_child(install_step("4. Compile your first program", "fox main.fox -o build/"));
+    steps.append_child(install_step("1. Clone the repository", "bash", "git clone https://github.com/fox-language/fox.git\ncd fox"));
+    steps.append_child(install_step("2. Build the compiler", "bash", "cargo build --release"));
+    steps.append_child(install_step("3. Add to PATH", "bash", "export PATH=\"$PWD/target/release:$PATH\""));
+    steps.append_child(install_step("4. Compile your first program", "rust", "fox main.fox -o build/"));
     container.append_child(steps);
 
     let note = Document::create_element("div");
@@ -176,7 +176,7 @@ fn build_install(parent: Element) {
     parent.append_child(section);
 }
 
-fn install_step(title: str, code: str): Element {
+fn install_step(title: str, lang: str, code: str): Element {
     let step = Document::create_element("div");
     step.set_attribute("class", "install-step");
 
@@ -186,7 +186,7 @@ fn install_step(title: str, code: str): Element {
 
     let pre = Document::create_element("pre");
     let code_el = Document::create_element("code");
-    code_el.set_attribute("class", "language-rust");
+    code_el.set_attribute("class", "language-" + lang);
     code_el.set_text_content(code);
     pre.append_child(code_el);
     step.append_child(pre);
