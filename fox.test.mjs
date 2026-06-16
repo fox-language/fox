@@ -641,4 +641,29 @@ pub fn test_error(): void {
             }
         }
     });
+
+    test("fails when accessing tuple using f-prefixed names", () => {
+        const errorTestFile = path.join(outDir, "error_test.fox");
+        fs.writeFileSync(errorTestFile, `
+pub fn test_error(): void {
+    let t: (i32, str) = (42, "test");
+    let val = t.f0;
+}
+`);
+        try {
+            execSync(`cargo run -- "${errorTestFile}" -o "${outDir}"`, {
+                stdio: 'pipe',
+            });
+            throw new Error("Compilation should have failed but succeeded");
+        } catch (err) {
+            const stderr = err.stderr ? err.stderr.toString() : err.message;
+            if (!stderr.includes("Tuple elements can only be accessed by index (e.g. '.0'), found '.f0'")) {
+                throw new Error(`Unexpected compiler output: ${stderr}`);
+            }
+        } finally {
+            if (fs.existsSync(errorTestFile)) {
+                fs.unlinkSync(errorTestFile);
+            }
+        }
+    });
 });

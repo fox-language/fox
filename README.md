@@ -7,7 +7,7 @@ Fox is a statically-typed, garbage-collected programming language designed to ta
 - **Strict Static Typing:** Strict type system without unsafe type inference; type annotations are required for numeric literals.
 - **WebAssembly GC & JS-String Integration:** Native support for garbage-collected arrays, structs, and strings leveraging browser/host capabilities.
 - **Custom Enums & Pattern Matching:** Powerful algebraic data types (enums with payloads) matched via exhaustive `match` expressions/statements, plus conditional bindings with `if let` and `while let`.
-- **Tuples:** Support for heterogeneous tuple types, tuple destructuring, and element access (e.g. `t.0` or `t.f0`).
+- **Tuples:** Support for heterogeneous tuple types, tuple destructuring, and element access (e.g. `t.0`).
 - **Generics & Traits:** Polymorphism via generic structs, functions, and trait-based constraints.
 - **Modules & Visibility:** File-based modules with strict explicit exports (`pub`) and imports (`use` / `as`).
 

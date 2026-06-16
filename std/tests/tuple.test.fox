@@ -43,9 +43,6 @@ pub fn test_tuple_fn() {
 
 pub fn test_tuple_field_access() {
     let t: (i32, str, bool) = (10, "test", false);
-    assert_eq(t.f0, 10);
-    assert_eq(t.f1, "test");
-    assert_eq(t.f2, false);
 
     // Test new integer-based dot access
     assert_eq(t.0, 10);

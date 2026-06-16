@@ -67,10 +67,27 @@ pub fn get_expr_type(
             if obj_ty.starts_with("[]") {
                 panic!("Field access not supported on array type: {}.{}", obj_ty, f_name);
             }
-            let resolved_ty = resolve_struct_name(&obj_ty, structs);
-            if let Some(s) = structs.get(&resolved_ty) {
-                if let Some(f) = s.fields.iter().find(|f| f.name == *f_name) {
-                    return f.ty.to_string();
+            if obj_ty.starts_with('(') && obj_ty.ends_with(')') {
+                if let Ok(idx) = f_name.parse::<usize>() {
+                    let resolved_ty = resolve_struct_name(&obj_ty, structs);
+                    if let Some(s) = structs.get(&resolved_ty) {
+                        let expected_field_name = format!("f{}", idx);
+                        if let Some(f) = s.fields.iter().find(|f| f.name == expected_field_name) {
+                            return f.ty.to_string();
+                        }
+                    }
+                } else {
+                    crate::diagnostics::report_error(
+                        format!("Tuple elements can only be accessed by index (e.g. '.0'), found '.{}'", f_name),
+                        crate::ast::get_span(expr),
+                    );
+                }
+            } else {
+                let resolved_ty = resolve_struct_name(&obj_ty, structs);
+                if let Some(s) = structs.get(&resolved_ty) {
+                    if let Some(f) = s.fields.iter().find(|f| f.name == *f_name) {
+                        return f.ty.to_string();
+                    }
                 }
             }
             "i32".to_string()

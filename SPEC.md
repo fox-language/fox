@@ -306,7 +306,7 @@ let n: i32 = match opt {
 ### 6.4 Tuples
 Tuples represent grouped values of heterogeneous types.
 - **Tuple Literal:** Enclosed in parentheses, e.g., `(42, "hello", true)`.
-- **Tuple Field Access:** Tuple members can be accessed directly by index (e.g., `t.0`, `t.1`) or via `.f<index>` notation (e.g., `t.f0`, `t.f1`).
+- **Tuple Field Access:** Tuple members are accessed directly by index (e.g., `t.0`, `t.1`).
 - **Tuple Destructuring:** Tuples can be destructuring in `let` bindings:
   ```fox
   let (a: i32, b: str) = (42, "hello");

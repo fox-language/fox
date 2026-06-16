@@ -255,7 +255,12 @@ pub fn generate_expr(
                 panic!("Field access not supported on array type: {}.{}", obj_ty, f_name);
             }
             let resolved_obj_ty = resolve_struct_name(&obj_ty, structs);
-            wat.push_str(&format!("    struct.get ${} ${}\n", sanitize_wat_name(&resolved_obj_ty), f_name));
+            let wat_field = if obj_ty.starts_with('(') && obj_ty.ends_with(')') {
+                format!("f{}", f_name)
+            } else {
+                f_name.clone()
+            };
+            wat.push_str(&format!("    struct.get ${} ${}\n", sanitize_wat_name(&resolved_obj_ty), wat_field));
             let actual_ty = get_expr_type(expr, sym, funcs, structs);
             if expected_ty == "anyref" && actual_ty != "anyref" {
                 emit_box_to_anyref(&actual_ty, wat, funcs, structs);
@@ -1678,13 +1683,18 @@ pub fn generate_stmt(
         Stmt::AssignField(obj, field, val) => {
             let obj_ty = get_expr_type(obj, sym, funcs, structs);
             let resolved_obj_ty = resolve_struct_name(&obj_ty, structs);
+            let wat_field = if obj_ty.starts_with('(') && obj_ty.ends_with(')') {
+                format!("f{}", field)
+            } else {
+                field.clone()
+            };
             let field_ty = structs.get(&resolved_obj_ty)
-                .and_then(|s| s.fields.iter().find(|f| f.name == *field))
+                .and_then(|s| s.fields.iter().find(|f| f.name == wat_field))
                 .map(|f| f.ty.to_string())
                 .unwrap_or_else(|| "unknown".to_string());
             generate_expr(obj, sym, &resolved_obj_ty, wat, funcs, structs, string_lit_ids, loop_idx, varr_depth);
             generate_expr(val, sym, &field_ty, wat, funcs, structs, string_lit_ids, loop_idx, varr_depth);
-            wat.push_str(&format!("    struct.set ${} ${}\n", sanitize_wat_name(&resolved_obj_ty), field));
+            wat.push_str(&format!("    struct.set ${} ${}\n", sanitize_wat_name(&resolved_obj_ty), wat_field));
         }
         Stmt::For(item_var, arr_var, body) => {
             let i_var = format!("_i{}", loop_idx);
