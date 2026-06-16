@@ -159,9 +159,9 @@ fn build_install(parent: Element) {
 
     let steps = Document::create_element("div");
     steps.set_attribute("class", "install-steps");
-    steps.append_child(install_step("1. Clone the repository", "bash", "git clone https://github.com/fox-language/fox.git\ncd fox"));
-    steps.append_child(install_step("2. Build the compiler", "bash", "cargo build --release"));
-    steps.append_child(install_step("3. Add to PATH", "bash", "export PATH=\"$PWD/target/release:$PATH\""));
+    steps.append_child(install_step("1. Clone the repository", "", "git clone https://github.com/fox-language/fox.git\ncd fox"));
+    steps.append_child(install_step("2. Build the compiler", "", "cargo build --release"));
+    steps.append_child(install_step("3. Add to PATH", "", "export PATH=\"$PWD/target/release:$PATH\""));
     steps.append_child(install_step("4. Compile your first program", "rust", "fox main.fox -o build/"));
     container.append_child(steps);
 
