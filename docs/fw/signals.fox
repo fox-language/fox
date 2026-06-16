@@ -1,0 +1,77 @@
+use std::collections::{Option, Set, Vec, SetIterator};
+use std::crypto::{Hash, Hasher32};
+
+pub struct Signal<T> {
+    value: T;
+    subs: Set<Effect>;
+}
+
+impl Signal<T> {
+    pub fn set(v: T) {
+        self.value = v;
+        let iter: SetIterator<Effect> = self.subs.iter();
+        while let Some(ef) = iter.next() {
+            cleanup(ef);
+            run_effect(ef);
+        }
+    }
+
+    pub fn update(f: (T): T) {
+        self.set(f(self.value));
+    }
+
+    pub fn get(): T {
+        if let Some(ef) = current_effect {
+            self.subs.add(ef);
+        }
+        return self.value;
+    }
+}
+
+pub struct Effect {
+    id: i64;
+    run: (): Option<()>;
+    teardowns: Vec<()>;
+}
+
+impl Hash for Effect {
+    pub fn hash(hasher: Hasher32) {
+        hasher.write_i64(self.id);
+    }
+}
+
+let current_effect: Option<Effect> = Option::None();
+let effect_id: i64 = 0;
+
+fn get_effect_id(): i64 {
+    effect_id = effect_id + 1;
+    return effect_id;
+}
+
+pub fn signal<T>(val: T): Signal<T> {
+    return Signal<T> {
+        value: val,
+        subs: Set<Effect>::new(),
+    };
+}
+
+pub fn effect(f: (): Option<()>) {
+    run_effect(Effect {
+        id: get_effect_id(),
+        run: f,
+        teardowns: Vec<()>::new(),
+    });
+}
+
+fn run_effect(ef: Effect) {
+    let prev = current_effect;
+    current_effect = Option<Effect>::Some(ef);
+    if let Some(td) = ef.run() {
+        ef.teardowns.push(td);
+    }
+    current_effect = prev;
+}
+
+fn cleanup(ef: Effect) {
+    while let Some(td) = ef.teardowns.pop() { td(); }
+}

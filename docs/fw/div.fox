@@ -1,0 +1,31 @@
+use std::global::{Element, Document};
+use std::collections::{Vec};
+
+pub struct Div {
+    ref: Element;
+    children: Vec<Element>;
+}
+
+impl Div {
+    pub static fn new(): Div {
+        return Div {
+            ref: Document::create_element("div"),
+            children: Vec<Element>::new(),
+        };
+    }
+
+    pub fn class(name: str): Div {
+        self.ref.set_attribute("class", name);
+        return self;
+    }
+
+    pub fn text_content(text: str): Div {
+        self.ref.set_text_content(text);
+        return self;
+    }
+
+    pub fn children(ch: Vec<Element>): Div {
+        self.children = ch;
+        return self;
+    }
+}

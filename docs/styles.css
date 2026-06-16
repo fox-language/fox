@@ -1,0 +1,301 @@
+*, *::before, *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+:root {
+    --bg: #0f1117;
+    --bg-raised: #1a1d27;
+    --bg-code: #151821;
+    --border: #2a2d3a;
+    --text: #e1e4ed;
+    --text-muted: #8b8fa3;
+    --accent: #f97316;
+    --accent-dim: #c2410c;
+    --green: #4ade80;
+    --blue: #60a5fa;
+    --purple: #c084fc;
+    --pink: #f472b6;
+    --red: #f87171;
+    --yellow: #facc15;
+    --cyan: #22d3ee;
+    --font-mono: 'SF Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace;
+    --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+body {
+    font-family: var(--font-sans);
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+}
+
+a {
+    color: var(--accent);
+    text-decoration: none;
+}
+a:hover {
+    text-decoration: underline;
+}
+
+/* Nav */
+nav {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: rgba(15, 17, 23, 0.85);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+}
+.nav-inner {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 0 1.5rem;
+    height: 56px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+.logo {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--accent);
+    letter-spacing: -0.02em;
+}
+.logo:hover { text-decoration: none; }
+.nav-links {
+    display: flex;
+    gap: 1.5rem;
+}
+.nav-links a {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+}
+.nav-links a:hover {
+    color: var(--text);
+    text-decoration: none;
+}
+
+/* Hero */
+.hero {
+    padding: 6rem 1.5rem 5rem;
+    text-align: center;
+    background: radial-gradient(ellipse at 50% 0%, rgba(249,115,22,0.08) 0%, transparent 60%);
+}
+.hero h1 {
+    font-size: 3.5rem;
+    font-weight: 800;
+    letter-spacing: -0.04em;
+    color: var(--accent);
+}
+.tagline {
+    margin-top: 1rem;
+    font-size: 1.2rem;
+    color: var(--text-muted);
+    max-width: 480px;
+    margin-left: auto;
+    margin-right: auto;
+}
+.hero-buttons {
+    margin-top: 2rem;
+    display: flex;
+    gap: 1rem;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+
+/* Buttons */
+.btn {
+    display: inline-block;
+    padding: 0.65rem 1.5rem;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 0.95rem;
+    transition: background 0.15s, transform 0.1s;
+}
+.btn:hover { text-decoration: none; transform: translateY(-1px); }
+.btn-primary {
+    background: var(--accent);
+    color: #fff;
+}
+.btn-primary:hover { background: #ea580c; }
+.btn-secondary {
+    background: var(--bg-raised);
+    color: var(--text);
+    border: 1px solid var(--border);
+}
+.btn-secondary:hover { background: var(--border); }
+
+/* Sections */
+section {
+    padding: 4rem 1.5rem;
+}
+section h2 {
+    font-size: 2rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    text-align: center;
+    margin-bottom: 0.5rem;
+}
+.section-subtitle {
+    text-align: center;
+    color: var(--text-muted);
+    margin-bottom: 2.5rem;
+    font-size: 1.05rem;
+}
+
+/* Features */
+.features {
+    background: var(--bg-raised);
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+}
+.feature-grid {
+    max-width: 960px;
+    margin: 2rem auto 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1.5rem;
+}
+.feature {
+    padding: 1.5rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg);
+}
+.feature h3 {
+    font-size: 1.1rem;
+    margin-bottom: 0.4rem;
+    color: var(--accent);
+}
+.feature p {
+    color: var(--text-muted);
+    font-size: 0.92rem;
+}
+
+/* Code */
+.container {
+    max-width: 800px;
+    margin: 0 auto;
+}
+.code-tabs {
+    display: flex;
+    gap: 0;
+    margin-bottom: 0;
+}
+.tab {
+    padding: 0.5rem 1.2rem;
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-bottom: none;
+    border-radius: 6px 6px 0 0;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: 0.82rem;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+.tab:hover { color: var(--text); }
+.tab.active {
+    background: var(--bg-code);
+    color: var(--accent);
+    border-color: var(--border);
+}
+.code-block {
+    background: var(--bg-code);
+    border: 1px solid var(--border);
+    border-radius: 0 6px 6px 6px;
+    padding: 1.25rem;
+    overflow-x: auto;
+}
+.code-block pre {
+    margin: 0;
+}
+.code-block code {
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+    line-height: 1.65;
+    color: var(--text);
+}
+.code-block.hidden { display: none; }
+
+/* Syntax highlighting */
+.kw { color: var(--purple); }
+.fn { color: var(--blue); }
+.ty { color: var(--cyan); }
+.str { color: var(--green); }
+.num { color: var(--accent); }
+.cmt { color: var(--text-muted); font-style: italic; }
+
+/* Install */
+.install {
+    background: var(--bg-raised);
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+}
+.install-steps {
+    max-width: 640px;
+    margin: 2rem auto 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+.install-step h3 {
+    font-size: 0.95rem;
+    color: var(--text-muted);
+    margin-bottom: 0.5rem;
+    font-weight: 500;
+}
+.install-step pre {
+    background: var(--bg-code);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.8rem 1rem;
+    overflow-x: auto;
+}
+.install-step code {
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+}
+.install-note {
+    max-width: 640px;
+    margin: 2rem auto 0;
+    padding: 1rem 1.25rem;
+    background: rgba(249,115,22,0.06);
+    border: 1px solid rgba(249,115,22,0.15);
+    border-radius: 6px;
+    font-size: 0.9rem;
+    color: var(--text-muted);
+}
+.install-note strong {
+    color: var(--accent);
+}
+
+/* Quick example */
+.quick-example .code-block {
+    border-radius: 6px;
+}
+
+/* Footer */
+footer {
+    padding: 3rem 1.5rem;
+    text-align: center;
+    border-top: 1px solid var(--border);
+    color: var(--text-muted);
+    font-size: 0.9rem;
+}
+.footer-links {
+    margin-top: 0.75rem;
+    display: flex;
+    gap: 1.5rem;
+    justify-content: center;
+}
+
+/* Responsive */
+@media (max-width: 640px) {
+    .hero h1 { font-size: 2.5rem; }
+    .tagline { font-size: 1rem; }
+    section { padding: 3rem 1rem; }
+    .feature-grid { grid-template-columns: 1fr; }
+}
