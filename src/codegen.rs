@@ -895,6 +895,7 @@ pub fn shorten_import_name(name: &str) -> String {
             "__fox_dom_element_remove_attribute" => "f_dra",
             "__fox_dom_element_set_text_content" => "f_dst",
             "__fox_dom_element_get_text_content" => "f_dgt",
+            "__fox_dom_element_set_inner_html" => "f_deh",
             "__fox_dom_element_add_click_listener" => "f_dcl",
             "__fox_dom_document_query_selector" => "f_dqs",
             "__fox_dom_document_create_element" => "f_dce",

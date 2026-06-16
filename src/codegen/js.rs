@@ -42,6 +42,7 @@ pub fn generate_js_bindings(
         ("__fox_dom_element_remove_attribute", "        __fox_dom_element_remove_attribute: (el, name) => el.removeAttribute(name),\n"),
         ("__fox_dom_element_set_text_content", "        __fox_dom_element_set_text_content: (el, text) => el.textContent = text,\n"),
         ("__fox_dom_element_get_text_content", "        __fox_dom_element_get_text_content: (el) => el.textContent,\n"),
+        ("__fox_dom_element_set_inner_html", "        __fox_dom_element_set_inner_html: (el, html) => el.innerHTML = html,\n"),
         ("__fox_dom_element_add_click_listener", "        __fox_dom_element_add_click_listener: (el, handler) => {\n            el.addEventListener('click', () => {\n                if (rawExports && rawExports.fox_run_task) {\n                    if (WebAssembly.promising) {\n                        WebAssembly.promising(rawExports.fox_run_task)(handler).catch(err => console.error('Error in click listener:', err));\n                    } else {\n                        rawExports.fox_run_task(handler);\n                    }\n                }\n            });\n        },\n"),
         ("__fox_dom_document_query_selector", "        __fox_dom_document_query_selector: (selector) => document.querySelector(selector),\n"),
         ("__fox_dom_document_create_element", "        __fox_dom_document_create_element: (tag) => document.createElement(tag),\n"),

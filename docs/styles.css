@@ -225,14 +225,6 @@ section h2 {
 }
 .code-block.hidden { display: none; }
 
-/* Syntax highlighting */
-.kw { color: var(--purple); }
-.fn { color: var(--blue); }
-.ty { color: var(--cyan); }
-.str { color: var(--green); }
-.num { color: var(--accent); }
-.cmt { color: var(--text-muted); font-style: italic; }
-
 /* Install */
 .install {
     background: var(--bg-raised);

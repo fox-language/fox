@@ -186,6 +186,7 @@ fn install_step(title: str, code: str): Element {
 
     let pre = Document::create_element("pre");
     let code_el = Document::create_element("code");
+    code_el.set_attribute("class", "language-rust");
     code_el.set_text_content(code);
     pre.append_child(code_el);
     step.append_child(pre);
@@ -212,7 +213,10 @@ fn build_quick_example(parent: Element) {
 
     let code_block = Document::create_element("pre");
     code_block.set_attribute("class", "code-block");
-    code_block.set_text_content(QUICK_EXAMPLE_TEXT);
+    let code_el = Document::create_element("code");
+    code_el.set_attribute("class", "language-rust");
+    code_el.set_text_content(QUICK_EXAMPLE_TEXT);
+    code_block.append_child(code_el);
     container.append_child(code_block);
 
     section.append_child(container);
