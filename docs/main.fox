@@ -7,10 +7,9 @@ fn main() {
     if let Some(body) = Document::query_selector("body") {
         build_nav(body);
         build_hero(body);
-        build_example(body);
+        build_quick_example(body);
         build_features(body);
         build_install(body);
-        build_quick_example(body);
         build_footer(body);
     } else {
         Console::log("Error: body element not found!");
@@ -98,68 +97,6 @@ fn ext_btn(text: str, cls: str, href: str): Element {
     a.set_attribute("rel", "noopener noreferrer");
     a.set_text_content(text);
     return a;
-}
-
-fn build_example(parent: Element) {
-    let section = Document::create_element("section");
-    section.set_attribute("class", "example");
-    section.set_attribute("id", "example");
-
-    let container = Document::create_element("div");
-    container.set_attribute("class", "container");
-
-    let h2 = Document::create_element("h2");
-    h2.set_text_content("Hello, World");
-    container.append_child(h2);
-
-    let sub = Document::create_element("p");
-    sub.set_attribute("class", "section-subtitle");
-    sub.set_text_content("A reactive counter app built with Fox and its signals framework.");
-    container.append_child(sub);
-
-    let tabs = Document::create_element("div");
-    tabs.set_attribute("class", "code-tabs");
-
-    let tab_main = Document::create_element("button");
-    tab_main.set_attribute("class", "tab active");
-    tab_main.set_text_content("main.fox");
-    tabs.append_child(tab_main);
-
-    let tab_reactive = Document::create_element("button");
-    tab_reactive.set_attribute("class", "tab");
-    tab_reactive.set_text_content("reactive/signals.fox");
-    tabs.append_child(tab_reactive);
-
-    container.append_child(tabs);
-
-    let code_main = Document::create_element("pre");
-    code_main.set_attribute("class", "code-block");
-    code_main.set_attribute("id", "tab-main");
-    code_main.set_text_content(code_main_text());
-    container.append_child(code_main);
-
-    let code_reactive = Document::create_element("pre");
-    code_reactive.set_attribute("class", "code-block hidden");
-    code_reactive.set_attribute("id", "tab-signals");
-    code_reactive.set_text_content(code_signals_text());
-    container.append_child(code_reactive);
-
-    tab_main.on_click(() => {
-        tab_main.set_attribute("class", "tab active");
-        tab_reactive.set_attribute("class", "tab");
-        code_main.set_attribute("class", "code-block");
-        code_reactive.set_attribute("class", "code-block hidden");
-    });
-
-    tab_reactive.on_click(() => {
-        tab_main.set_attribute("class", "tab");
-        tab_reactive.set_attribute("class", "tab active");
-        code_main.set_attribute("class", "code-block hidden");
-        code_reactive.set_attribute("class", "code-block");
-    });
-
-    section.append_child(container);
-    parent.append_child(section);
 }
 
 fn build_features(parent: Element) {
@@ -293,14 +230,6 @@ fn build_footer(parent: Element) {
 
     footer.append_child(container);
     parent.append_child(footer);
-}
-
-fn code_main_text(): str {
-    return "use std::global::{Document, Element, Console};\nuse std::collections::{Option};\nuse std::fmt;\nuse self::reactive;\n\nfn main() {\n    if let Some(app_el) = Document::query_selector(\"body\") {\n        app_el.append_child(counter());\n    } else {\n        Console::log(\"Error: body element not found!\");\n    }\n}\n\nfn counter(): Element {\n    let app_el = Document::create_element(\"div\");\n    let count = reactive::signal<i32>(0);\n    let display = Document::create_element(\"div\");\n    app_el.append_child(display);\n\n    reactive::effect((): Option<()> => {\n        let current = count.get();\n        Console::log(fmt::sprintf(\"Count changed to %d\", current));\n        display.set_text_content(fmt::sprintf(\"Count: %d\", current));\n        return Option::Some(() => Console::log(\"cleanup!\"));\n    });\n\n    let btn = Document::create_element(\"button\");\n    btn.set_text_content(\"Increment\");\n    btn.on_click(() => count.update((v: i32): i32 => v + 1));\n    app_el.append_child(btn);\n\n    return app_el;\n}";
-}
-
-fn code_signals_text(): str {
-    return "use std::collections::{Option, Set, Vec, SetIterator};\nuse std::crypto::{Hash, Hasher32};\n\npub struct Signal<T> {\n    value: T;\n    subs: Set<Effect>;\n}\n\nimpl Signal<T> {\n    pub fn set(v: T) {\n        self.value = v;\n        let iter: SetIterator<Effect> = self.subs.iter();\n        while let Some(ef) = iter.next() {\n            cleanup(ef);\n            run_effect(ef);\n        }\n    }\n\n    pub fn update(f: (T): T) {\n        self.set(f(self.value));\n    }\n\n    pub fn get(): T {\n        if let Some(ef) = current_effect {\n            self.subs.add(ef);\n        }\n        return self.value;\n    }\n}\n\npub struct Effect {\n    id: i64;\n    run: (): Option<()>;\n    teardowns: Vec<()>;\n}\n\npub fn signal<T>(val: T): Signal<T> {\n    return Signal<T> {\n        value: val,\n        subs: Set<Effect>::new(),\n    };\n}\n\npub fn effect(f: (): Option<()>) {\n    run_effect(Effect {\n        id: get_effect_id(),\n        run: f,\n        teardowns: Vec::<()>::new(),\n    });\n}";
 }
 
 fn quick_example_text(): str {
