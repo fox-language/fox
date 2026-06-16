@@ -10,6 +10,7 @@ pub mod optimizer;
 mod closure;
 pub mod macro_runner;
 pub mod type_checker;
+pub mod lsp;
 
 use crate::ast::*;
 use crate::lexer::Lexer;
@@ -534,6 +535,13 @@ fn run_wasm_opt(wasm_path: &Path, user_flags: &[String]) -> std::io::Result<()> 
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
+    if args.len() > 1 && args[1] == "lsp" {
+        if let Err(e) = lsp::run_lsp() {
+            eprintln!("LSP server error: {:?}", e);
+            std::process::exit(1);
+        }
+        return;
+    }
     let mut input_path: Option<String> = None;
     let mut output_dir: Option<String> = None;
     let mut opt_flags: Vec<String> = Vec::new();
