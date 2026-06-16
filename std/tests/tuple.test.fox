@@ -46,6 +46,17 @@ pub fn test_tuple_field_access() {
     assert_eq(t.f0, 10);
     assert_eq(t.f1, "test");
     assert_eq(t.f2, false);
+
+    // Test new integer-based dot access
+    assert_eq(t.0, 10);
+    assert_eq(t.1, "test");
+    assert_eq(t.2, false);
+
+    // Test nested integer-based dot access
+    let nested: ((i32, str), bool) = ((42, "nested_val"), true);
+    assert_eq(nested.0.0, 42);
+    assert_eq(nested.0.1, "nested_val");
+    assert_eq(nested.1, true);
 }
 
 struct TestBox<T> {

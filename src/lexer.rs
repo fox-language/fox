@@ -8,6 +8,7 @@ pub struct Lexer<'a> {
     pub offset: usize,
     pub line: usize,
     pub column: usize,
+    pub last_was_dot: bool,
 }
 
 impl<'a> Lexer<'a> {
@@ -17,6 +18,7 @@ impl<'a> Lexer<'a> {
             offset: self.offset,
             line: self.line,
             column: self.column,
+            last_was_dot: self.last_was_dot,
         };
         cloned.next_token().node
     }
@@ -27,6 +29,7 @@ impl<'a> Lexer<'a> {
             offset: 0,
             line: 1,
             column: 1,
+            last_was_dot: false,
         }
     }
 
@@ -43,12 +46,17 @@ impl<'a> Lexer<'a> {
     }
 
     pub fn next_token(&mut self) -> Spanned<Token> {
+        let mut had_whitespace = false;
         while let Some(&c) = self.chars.peek() {
             if c.is_whitespace() {
                 self.consume();
+                had_whitespace = true;
             } else {
                 break;
             }
+        }
+        if had_whitespace {
+            self.last_was_dot = false;
         }
         let start_offset = self.offset;
         let start_line = self.line;
@@ -227,8 +235,8 @@ impl<'a> Lexer<'a> {
                             saw_dot = false;
                         }
                     } else if ch == '.' {
-                        if saw_dot {
-                            // Second `.` in a row (e.g. `1..`) — stop.
+                        if saw_dot || self.last_was_dot {
+                            // Second `.` in a row (e.g. `1..`) or immediately after dot (e.g. `t.0`) — stop.
                             break;
                         }
                         // Look at the next-next char without consuming.
@@ -328,6 +336,7 @@ impl<'a> Lexer<'a> {
             }
             _ => panic!("Unexpected character: {}", c),
         };
+        self.last_was_dot = token == Token::Dot;
         let span = Span::new(start_offset, self.offset, start_line, start_column);
         Spanned::new(token, span)
     }

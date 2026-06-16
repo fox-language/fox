@@ -1841,7 +1841,8 @@ impl<'a> Parser<'a> {
             self.advance();
             let method_or_field = match &self.current_token {
                 Token::Identifier(n) => n.clone(),
-                _ => panic!("Expected identifier after dot"),
+                Token::Integer(val) => format!("f{}", val),
+                _ => panic!("Expected identifier or integer after dot, found {:?}", self.current_token),
             };
             self.advance();
             if self.current_token == Token::LParen {

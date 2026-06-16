@@ -28,7 +28,7 @@ Identifiers consist of alphanumeric characters and underscores, beginning with a
 
 ### 2.4 Keywords & Reserved Types
 The following keywords are reserved in Fox:
-- `import`, `extern`, `fn`, `true`, `false`, `return`, `let`, `const`, `for`, `in`, `if`, `while`, `struct`, `pub`, `static`, `new`, `map`, `trait`, `impl`, `else`, `match`
+- `use`, `as`, `extern`, `fn`, `true`, `false`, `return`, `let`, `const`, `for`, `in`, `if`, `while`, `struct`, `pub`, `static`, `new`, `map`, `trait`, `impl`, `else`, `match`, `enum`
 
 The following type names are reserved:
 - `i32`, `i64`, `u32`, `u64`, `f32`, `f64`, `str`, `void`, `byte`, `bool`, `anyref`, `externref`
@@ -64,6 +64,7 @@ When compiled to WebAssembly Text (WAT), Fox types map directly to Wasm types:
 ### 3.2 Compound Types
 - **Arrays (`[]T`):** Reference types representing garbage-collected arrays of type `T`. Mapped to WAT as `(ref null $array_T)`.
 - **Structs (`S`):** Reference types representing garbage-collected struct definitions. Mapped to WAT as `(ref null $S)`.
+- **Tuples (`(T1, T2, ...)`):** Types representing fixed-size collections of values of potentially different types. Mapped to WAT as garbage-collected struct types.
 
 ### 3.3 Generics & Constraints
 Fox supports generic parameters for structs, functions, traits, and implementations.
@@ -84,10 +85,11 @@ Unconstrained generic parameters automatically undergo monomorphization analysis
 
 ### 4.1 Modules and Imports
 - **Files as Modules**: Every `.fox` file constitutes a separate module.
-- **File Isolation**: Items (structs, functions, constants, traits) declared in a file are entirely private to that file by default. They cannot be seen or used by any other file, even files in the same directory, unless explicitly exported and imported.
-- **Visibility (`pub`)**: To allow an item to be imported by other files, it must be prefixed with the `pub` keyword (e.g., `pub struct`, `pub fn`, `pub const`, `pub trait`).
-- **Directory Imports**: The `import` statement operates on directories (packages). For example, `import std::collections::{Vec, Map};` searches the `std/collections` directory.
-- **Strict Explicit Imports**: `import path::dir::{A};` explicitly imports *only* `A` into the current module. Attempting to use unimported items from that directory or attempting to import an item that is not `pub` is a compile error.
+- **File Isolation**: Items (structs, enums, functions, constants, traits) declared in a file are entirely private to that file by default. They cannot be seen or used by any other file, even files in the same directory, unless explicitly exported and imported.
+- **Visibility (`pub`)**: To allow an item to be imported by other files, it must be prefixed with the `pub` keyword (e.g., `pub struct`, `pub enum`, `pub fn`, `pub const`, `pub trait`).
+- **Directory Imports**: The `use` statement operates on directories (packages) to import items. For example, `use std::collections::{Vec, Map};` searches the `std/collections` directory.
+- **Aliasing / Renaming (`as`)**: Imported symbols can be renamed using the `as` keyword: `use std::fmt as custom_fmt;` or `use std::collections::{Vec as Vector};`.
+- **Strict Explicit Imports**: `use path::dir::{A};` explicitly imports *only* `A` into the current module. Attempting to use unimported items from that directory or attempting to import an item that is not `pub` is a compile error.
 - **Resolution**:
   - Modules under the `std` namespace are searched in the directory specified by the `FOX_PATH` environment variable.
   - Modules under the `self` namespace are resolved relative to the current workspace root directory.
@@ -177,6 +179,34 @@ if s.starts_with("he") && !s.is_empty() { ... }   // no `use` needed
 - `self` is auto-inserted as the first parameter for non-static methods, just as in trait impls.
 - Inherent methods on builtins take precedence over any trait method of the same name during method-call resolution.
 
+### 4.8 Enums
+Enums define custom types that can have multiple variants, optionally containing payloads (associated types).
+```fox
+pub enum TrafficLight {
+    Red();
+    Yellow();
+    Green();
+}
+
+pub enum Shape {
+    Circle(i32);
+    Rectangle(i32, i32);
+    Point();
+}
+```
+- **Instantiation:** Enum variants are constructed by calling their constructor name like a function: `let r = Red();` or `let c = Circle(15);`. For generic enums, type parameters are specified: `Boxed<i32>::Full(100)`.
+- **Associated Methods:** Enums can have methods declared on them using `impl` blocks:
+  ```fox
+  impl TrafficLight {
+      pub fn is_red(self): bool {
+          return match self {
+              Red() => true,
+              _ => false,
+          };
+      }
+  }
+  ```
+
 ---
 
 ## 5. Statements & Control Flow
@@ -211,6 +241,28 @@ if x < 0.0 {
   }
   ```
 
+### 5.4 Pattern Conditional Bindings (`if let` & `while let`)
+Fox supports pattern matching in conditional blocks:
+- **`if let` Statement:** Conditionally executes a block if a pattern matches:
+  ```fox
+  if let Some(val) = opt {
+      assert_eq(42, val);
+  } else {
+      // executes if opt is None
+  }
+  ```
+- **`while let` / `while` Loop:** Loops as long as a pattern matches a expression value:
+  ```fox
+  while let Some(val) = vec.pop() {
+      sum = sum + val;
+  }
+  
+  // The 'let' keyword is optional in while pattern conditions:
+  while Some(val) = vec.pop() {
+      sum = sum + val;
+  }
+  ```
+
 ---
 
 ## 6. Expressions
@@ -227,22 +279,39 @@ if x < 0.0 {
 - **Field Access:** `struct_val.field_name` accesses fields of a struct.
 
 ### 6.3 Pattern Matching (`match`)
-Pattern matching in Fox is specifically designed to work with the standard `Option` type. It matches `Some(value)` and `None` branches and can be used both as a statement and an expression.
+Pattern matching can be performed using the `match` construct as either a statement or an expression. It supports matching on:
+1. `Option<T>` variants: `Some(val)` and `None()`.
+2. `Result<T, E>` variants: `Ok(val)` and `Err(err)`.
+3. User-defined custom `enum` variants, with payload destructuring (e.g., `Circle(rad)` or `Rectangle(w, h)`).
+4. Catch-all pattern `_`.
+
+Match expressions must be exhaustive, covering all variants or providing a catch-all `_` arm.
+
 ```fox
 // Match statement
 match opt {
     Some(val) => {
         assert_eq(42, val);
     },
-    None => {},
+    None() => {},
 }
 
 // Match expression
 let n: i32 = match opt {
     Some(val) => val * 2,
-    None => 0,
+    None() => 0,
 };
 ```
+
+### 6.4 Tuples
+Tuples represent grouped values of heterogeneous types.
+- **Tuple Literal:** Enclosed in parentheses, e.g., `(42, "hello", true)`.
+- **Tuple Field Access:** Tuple members can be accessed directly by index (e.g., `t.0`, `t.1`) or via `.f<index>` notation (e.g., `t.f0`, `t.f1`).
+- **Tuple Destructuring:** Tuples can be destructuring in `let` bindings:
+  ```fox
+  let (a: i32, b: str) = (42, "hello");
+  let (x: i32, (y: str, z: bool)) = (1, ("two", true));
+  ```
 
 ---
 
@@ -278,9 +347,11 @@ The standard library contains the following modules under `std::`:
    - `console::Console::log(msg: str)`: Logs to host console.
    - `performance::Performance::now() -> f64`: Gets high-resolution time.
 3. **`std::collections`**: Generic collection types.
-   - `Option<T>`: Represents optional values via `some(T)` and `none()`.
+   - `Option<T>`: Represents optional values via `Some(T)` and `None()`.
+   - `Result<T, E>`: Represents success (`Ok(T)`) or failure (`Err(E)`) values.
    - `Vec<T>`: Dynamic arrays supporting `push`, `pop`, `grow`, `get`, and `set`.
-   - `Map<K, V>`: HashMap supporting `set`, `get`, and `has` (where K is constrained by `Hash` trait: `i32`, `i64`, and `str`).
+   - `Map<K, V>`: HashMap supporting `set`, `get`, and `has` (where K is constrained by `Hash` trait).
+   - `Set<K>`: HashSet supporting `add`, `has`, `delete`, and `iter` (where K is constrained by `Hash` trait).
 4. **`std::math`**: Trigonometric, logarithmic, and arithmetic utilities operating on `f64`.
 5. **`std::string`**: String manipulation utilities under `StringExt` trait and `StringSlice` struct.
 6. **`std::crypto`**: Hashing utilities including the standard `Hash` trait, FNV-1a (32-bit and 64-bit) functions, and stateful hasher structs.
