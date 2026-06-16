@@ -83,6 +83,11 @@ nav {
     text-align: center;
     background: radial-gradient(ellipse at 50% 0%, rgba(249,115,22,0.08) 0%, transparent 60%);
 }
+.hero-logo {
+    width: 120px;
+    height: 120px;
+    margin-bottom: 1rem;
+}
 .hero h1 {
     font-size: 3.5rem;
     font-weight: 800;

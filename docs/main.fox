@@ -62,6 +62,12 @@ fn build_hero(parent: Element) {
     let inner = Document::create_element("div");
     inner.set_attribute("class", "hero-inner");
 
+    let img = Document::create_element("img");
+    img.set_attribute("src", "fox.png");
+    img.set_attribute("alt", "Fox");
+    img.set_attribute("class", "hero-logo");
+    inner.append_child(img);
+
     let h1 = Document::create_element("h1");
     h1.set_text_content("Fox");
     inner.append_child(h1);
