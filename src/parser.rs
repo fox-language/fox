@@ -1599,6 +1599,20 @@ impl<'a> Parser<'a> {
                 self.expect(Token::RBrace);
                 Expr::MapLit(pairs)
             }
+            Token::LBracket => {
+                self.advance();
+                let mut elems = Vec::new();
+                while self.current_token != Token::RBracket {
+                    elems.push(self.parse_expr());
+                    if self.current_token == Token::Comma {
+                        self.advance();
+                    } else if self.current_token != Token::RBracket {
+                        panic!("Expected ',' or ']' in vec literal, found {:?}", self.current_token);
+                    }
+                }
+                self.expect(Token::RBracket);
+                Expr::VecLit(elems)
+            }
             Token::New => {
                 self.advance();
                 if self.current_token == Token::LBracket {

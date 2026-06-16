@@ -538,6 +538,7 @@ pub enum Expr {
     Spread(Box<Expr>),
     Tuple(Vec<Expr>),
     MapLit(Vec<(Expr, Expr)>),
+    VecLit(Vec<Expr>),
 }
 
 impl Clone for Expr {
@@ -565,6 +566,7 @@ impl Clone for Expr {
             Expr::Spread(e) => Expr::Spread(e.clone()),
             Expr::Tuple(v) => Expr::Tuple(v.clone()),
             Expr::MapLit(v) => Expr::MapLit(v.clone()),
+            Expr::VecLit(v) => Expr::VecLit(v.clone()),
         };
         if let Some(span) = get_span(self) {
             register_span(&cloned, span);

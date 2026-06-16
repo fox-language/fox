@@ -1078,6 +1078,22 @@ fn infer_expr_type(expr: &Expr, env: &HashMap<String, String>) -> String {
                 format!("Map<{}, {}>", k_ty, v_ty)
             }
         }
+        Expr::VecLit(elems) => {
+            if elems.is_empty() {
+                "Vec<anyref>".to_string()
+            } else {
+                let first_ty = infer_expr_type(&elems[0], env);
+                let mut el_ty = first_ty;
+                for el in elems.iter().skip(1) {
+                    let cur_ty = infer_expr_type(el, env);
+                    if cur_ty != el_ty {
+                        el_ty = "anyref".to_string();
+                        break;
+                    }
+                }
+                format!("Vec<{}>", el_ty)
+            }
+        }
         Expr::MethodCall(obj, method, _) => {
             let obj_ty = infer_expr_type(obj, env);
             if obj_ty.starts_with("Map<") {
@@ -1384,6 +1400,19 @@ fn collect_callees_expr(
             for (k, v) in pairs {
                 collect_callees_expr(k, sym, funcs, structs, callees);
                 collect_callees_expr(v, sym, funcs, structs, callees);
+            }
+        }
+        Expr::VecLit(elems) => {
+            let vec_ty = infer_expr_type(expr, sym);
+            let mono_vec_struct = resolve_struct_name(&vec_ty, structs);
+            if elems.is_empty() {
+                callees.insert(format!("{}::new", mono_vec_struct));
+            } else {
+                callees.insert(format!("{}::with_cap", mono_vec_struct));
+                callees.insert(format!("{}::push", mono_vec_struct));
+            }
+            for el in elems {
+                collect_callees_expr(el, sym, funcs, structs, callees);
             }
         }
         _ => {}

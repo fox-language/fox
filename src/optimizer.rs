@@ -112,6 +112,7 @@ fn substitute_expr_typed(expr: &Expr, generic_name: &str, replacement: &Type) ->
         Expr::Spread(e) => Expr::Spread(Box::new(substitute_expr_typed(e, generic_name, replacement))),
         Expr::Tuple(exprs) => Expr::Tuple(exprs.iter().map(|a| substitute_expr_typed(a, generic_name, replacement)).collect()),
         Expr::MapLit(pairs) => Expr::MapLit(pairs.iter().map(|(k, v)| (substitute_expr_typed(k, generic_name, replacement), substitute_expr_typed(v, generic_name, replacement))).collect()),
+        Expr::VecLit(elems) => Expr::VecLit(elems.iter().map(|a| substitute_expr_typed(a, generic_name, replacement)).collect()),
     }
 }
 
@@ -340,6 +341,7 @@ pub fn remap_expr(expr: &Expr, map: &std::collections::HashMap<String, String>) 
         Expr::Spread(e) => Expr::Spread(Box::new(remap_expr(e, map))),
         Expr::Tuple(exprs) => Expr::Tuple(exprs.iter().map(|e| remap_expr(e, map)).collect()),
         Expr::MapLit(pairs) => Expr::MapLit(pairs.iter().map(|(k, v)| (remap_expr(k, map), remap_expr(v, map))).collect()),
+        Expr::VecLit(elems) => Expr::VecLit(elems.iter().map(|e| remap_expr(e, map)).collect()),
         Expr::Cast(e, t) => Expr::Cast(Box::new(remap_expr(e, map)), remap_type(t, map)),
         _ => expr.clone(),
     }
@@ -477,6 +479,7 @@ pub fn substitute_identifier_in_expr(expr: &Expr, target: &str, replacement: &Ex
         Expr::Spread(e) => Expr::Spread(Box::new(substitute_identifier_in_expr(e, target, replacement))),
         Expr::Tuple(exprs) => Expr::Tuple(exprs.iter().map(|a| substitute_identifier_in_expr(a, target, replacement)).collect()),
         Expr::MapLit(pairs) => Expr::MapLit(pairs.iter().map(|(k, v)| (substitute_identifier_in_expr(k, target, replacement), substitute_identifier_in_expr(v, target, replacement))).collect()),
+        Expr::VecLit(elems) => Expr::VecLit(elems.iter().map(|a| substitute_identifier_in_expr(a, target, replacement)).collect()),
     }
 }
 
@@ -526,6 +529,7 @@ pub fn inline_calls_in_expr(expr: &Expr, func_map: &std::collections::HashMap<St
         Expr::Spread(e) => Expr::Spread(Box::new(inline_calls_in_expr(e, func_map, depth))),
         Expr::Tuple(exprs) => Expr::Tuple(exprs.iter().map(|a| inline_calls_in_expr(a, func_map, depth)).collect()),
         Expr::MapLit(pairs) => Expr::MapLit(pairs.iter().map(|(k, v)| (inline_calls_in_expr(k, func_map, depth), inline_calls_in_expr(v, func_map, depth))).collect()),
+        Expr::VecLit(elems) => Expr::VecLit(elems.iter().map(|a| inline_calls_in_expr(a, func_map, depth)).collect()),
     }
 }
 
@@ -634,6 +638,11 @@ pub fn get_modified_vars_expr(expr: &Expr, vars: &mut std::collections::HashSet<
             for (k, v) in pairs {
                 get_modified_vars_expr(k, vars);
                 get_modified_vars_expr(v, vars);
+            }
+        }
+        Expr::VecLit(elems) => {
+            for e in elems {
+                get_modified_vars_expr(e, vars);
             }
         }
         _ => {}
@@ -774,6 +783,11 @@ pub fn get_read_vars(expr: &Expr, vars: &mut std::collections::HashSet<String>) 
             for (k, v) in pairs {
                 get_read_vars(k, vars);
                 get_read_vars(v, vars);
+            }
+        }
+        Expr::VecLit(elems) => {
+            for e in elems {
+                get_read_vars(e, vars);
             }
         }
     }
@@ -936,6 +950,7 @@ pub fn optimize_expr(expr: &Expr) -> Expr {
         Expr::Spread(e) => Expr::Spread(Box::new(optimize_expr(e))),
         Expr::Tuple(exprs) => Expr::Tuple(exprs.iter().map(optimize_expr).collect()),
         Expr::MapLit(pairs) => Expr::MapLit(pairs.iter().map(|(k, v)| (optimize_expr(k), optimize_expr(v))).collect()),
+        Expr::VecLit(elems) => Expr::VecLit(elems.iter().map(optimize_expr).collect()),
         _ => expr.clone(),
     }
 }
@@ -1110,6 +1125,11 @@ fn find_mutated_vars_expr(expr: &Expr, mutated: &mut std::collections::HashSet<S
                 find_mutated_vars_expr(v, mutated);
             }
         }
+        Expr::VecLit(elems) => {
+            for e in elems {
+                find_mutated_vars_expr(e, mutated);
+            }
+        }
         Expr::Cast(e, _) => {
             find_mutated_vars_expr(e, mutated);
         }
@@ -1189,6 +1209,7 @@ pub fn hoist_array_len_expr(expr: &Expr, hoisted: &mut std::collections::HashSet
         Expr::Spread(e) => Expr::Spread(Box::new(hoist_array_len_expr(e, hoisted, mutated_vars))),
         Expr::Tuple(exprs) => Expr::Tuple(exprs.iter().map(|a| hoist_array_len_expr(a, hoisted, mutated_vars)).collect()),
         Expr::MapLit(pairs) => Expr::MapLit(pairs.iter().map(|(k, v)| (hoist_array_len_expr(k, hoisted, mutated_vars), hoist_array_len_expr(v, hoisted, mutated_vars))).collect()),
+        Expr::VecLit(elems) => Expr::VecLit(elems.iter().map(|a| hoist_array_len_expr(a, hoisted, mutated_vars)).collect()),
         _ => expr.clone(),
     }
 }
@@ -1450,6 +1471,11 @@ fn count_usages_expr(
                 count_usages_expr(v, total_usages, call_usages);
             }
         }
+        Expr::VecLit(elems) => {
+            for e in elems {
+                count_usages_expr(e, total_usages, call_usages);
+            }
+        }
         Expr::Match(cond, arms) => {
             count_usages_expr(cond, total_usages, call_usages);
             for arm in arms {
@@ -1641,6 +1667,9 @@ fn rename_vars_in_expr(expr: &Expr, rename_map: &HashMap<String, String>) -> Exp
         }
         Expr::MapLit(pairs) => {
             Expr::MapLit(pairs.iter().map(|(k, v)| (rename_vars_in_expr(k, rename_map), rename_vars_in_expr(v, rename_map))).collect())
+        }
+        Expr::VecLit(elems) => {
+            Expr::VecLit(elems.iter().map(|e| rename_vars_in_expr(e, rename_map)).collect())
         }
         Expr::Match(cond, arms) => {
             Expr::Match(
@@ -2066,6 +2095,11 @@ fn inline_local_closures_in_expr(
                     inline_local_closures_in_expr(k, closure_defs, var_counter, prepended_stmts),
                     inline_local_closures_in_expr(v, closure_defs, var_counter, prepended_stmts)
                 )).collect()
+            )
+        }
+        Expr::VecLit(elems) => {
+            Expr::VecLit(
+                elems.into_iter().map(|e| inline_local_closures_in_expr(e, closure_defs, var_counter, prepended_stmts)).collect()
             )
         }
         Expr::Match(cond, arms) => {

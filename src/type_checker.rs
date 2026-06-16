@@ -232,6 +232,23 @@ pub fn get_expr_type(
                 format!("Map<{}, {}>", first_k_ty, v_ty)
             }
         }
+        Expr::VecLit(elems) => {
+            if elems.is_empty() {
+                "Vec<anyref>".to_string()
+            } else {
+                let first_ty = get_expr_type(&elems[0], sym, funcs, structs);
+                let mut elems_same = true;
+                for el in elems {
+                    let el_ty = get_expr_type(el, sym, funcs, structs);
+                    if el_ty != first_ty {
+                        elems_same = false;
+                        break;
+                    }
+                }
+                let ty = if elems_same { first_ty } else { "anyref".to_string() };
+                format!("Vec<{}>", ty)
+            }
+        }
     }
 }
 
@@ -571,6 +588,11 @@ pub fn validate_call_types_in_expr(
             for (k, v) in pairs {
                 validate_call_types_in_expr(k, sym, funcs, structs);
                 validate_call_types_in_expr(v, sym, funcs, structs);
+            }
+        }
+        Expr::VecLit(elems) => {
+            for e in elems {
+                validate_call_types_in_expr(e, sym, funcs, structs);
             }
         }
         Expr::Closure(func) => {

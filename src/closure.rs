@@ -102,6 +102,22 @@ fn infer_expr_type(
                 Some(format!("Map<{}, {}>", k_ty, v_ty))
             }
         }
+        Expr::VecLit(elems) => {
+            if elems.is_empty() {
+                Some("Vec<anyref>".to_string())
+            } else {
+                let first_ty = infer_expr_type(&elems[0], var_types, structs, funcs).unwrap_or_else(|| "anyref".to_string());
+                let mut elem_ty = first_ty;
+                for el in elems.iter().skip(1) {
+                    let cur_ty = infer_expr_type(el, var_types, structs, funcs).unwrap_or_else(|| "anyref".to_string());
+                    if cur_ty != elem_ty {
+                        elem_ty = "anyref".to_string();
+                        break;
+                    }
+                }
+                Some(format!("Vec<{}>", elem_ty))
+            }
+        }
         Expr::Binary(left, _, right) => {
             let l_ty = infer_expr_type(left, var_types, structs, funcs);
             let r_ty = infer_expr_type(right, var_types, structs, funcs);
@@ -495,6 +511,11 @@ fn lift_closures_expr(
             for (k, v) in pairs {
                 lift_closures_expr(k, var_types, closure_idx, new_funcs, structs, parent_func_name, funcs);
                 lift_closures_expr(v, var_types, closure_idx, new_funcs, structs, parent_func_name, funcs);
+            }
+        }
+        Expr::VecLit(elems) => {
+            for el in elems {
+                lift_closures_expr(el, var_types, closure_idx, new_funcs, structs, parent_func_name, funcs);
             }
         }
         _ => {}

@@ -775,6 +775,61 @@ pub fn generate_expr(
 
             wat.push_str(&format!("    local.get ${}\n", temp_var));
         }
+        Expr::VecLit(elems) => {
+            let mut vec_ty = get_expr_type(expr, sym, funcs, structs);
+            if expected_ty.starts_with("Vec<") || expected_ty.starts_with("Vec_") || expected_ty.contains("Vec") {
+                vec_ty = expected_ty.to_string();
+            }
+            let el_ty = if vec_ty.starts_with("Vec<") {
+                if let Some(start) = vec_ty.find('<') {
+                    if let Some(end) = vec_ty.find('>') {
+                        vec_ty[start+1..end].trim().to_string()
+                    } else {
+                        "anyref".to_string()
+                    }
+                } else {
+                    "anyref".to_string()
+                }
+            } else if vec_ty.starts_with("Vec_") {
+                let parts: Vec<&str> = vec_ty.split('_').collect();
+                if parts.len() >= 2 {
+                    parts[1..].join("_")
+                } else {
+                    "anyref".to_string()
+                }
+            } else {
+                "anyref".to_string()
+            };
+
+            let mono_vec_struct = resolve_struct_name(&vec_ty, structs);
+            let temp_var = format!("_vec_lit_tmp{}", *loop_idx);
+            *loop_idx += 1;
+
+            if elems.is_empty() {
+                let new_func_name = format!("{}::new", mono_vec_struct);
+                let sanitized_new_fn = sanitize_wat_name(&new_func_name);
+                wat.push_str(&format!("    call ${}\n", sanitized_new_fn));
+            } else {
+                let with_cap_func_name = format!("{}::with_cap", mono_vec_struct);
+                let sanitized_with_cap_fn = sanitize_wat_name(&with_cap_func_name);
+                wat.push_str(&format!("    i32.const {}\n", elems.len()));
+                wat.push_str(&format!("    call ${}\n", sanitized_with_cap_fn));
+            }
+            wat.push_str(&format!("    local.set ${}\n", temp_var));
+
+            if !elems.is_empty() {
+                let push_func_name = format!("{}::push", mono_vec_struct);
+                let sanitized_push_fn = sanitize_wat_name(&push_func_name);
+
+                for el in elems {
+                    wat.push_str(&format!("    local.get ${}\n", temp_var));
+                    generate_expr(el, sym, &el_ty, wat, funcs, structs, string_lit_ids, loop_idx, varr_depth);
+                    wat.push_str(&format!("    call ${}\n", sanitized_push_fn));
+                }
+            }
+
+            wat.push_str(&format!("    local.get ${}\n", temp_var));
+        }
     }
 }
 
@@ -1040,6 +1095,7 @@ pub fn has_variadic_call_expr(
         Expr::Spread(e) => has_variadic_call_expr(e, sym, funcs, structs),
         Expr::Tuple(exprs) => exprs.iter().any(|e| has_variadic_call_expr(e, sym, funcs, structs)),
         Expr::MapLit(pairs) => pairs.iter().any(|(k, v)| has_variadic_call_expr(k, sym, funcs, structs) || has_variadic_call_expr(v, sym, funcs, structs)),
+        Expr::VecLit(elems) => elems.iter().any(|e| has_variadic_call_expr(e, sym, funcs, structs)),
         _ => false,
     }
 }
@@ -1260,6 +1316,24 @@ pub fn scan_locals_expr(
             for (k, v) in pairs {
                 scan_locals_expr(k, sym, locals, loop_idx, funcs, structs);
                 scan_locals_expr(v, sym, locals, loop_idx, funcs, structs);
+            }
+        }
+        Expr::VecLit(elems) => {
+            let mut vec_ty = get_expr_type(expr, sym, funcs, structs);
+            let expected = CURRENT_EXPECTED_TYPE.with(|c| c.borrow().clone());
+            if expected.starts_with("Vec<") || expected.starts_with("Vec_") || expected.contains("Vec") {
+                vec_ty = expected;
+            }
+            let temp_var = format!("_vec_lit_tmp{}", *loop_idx);
+            *loop_idx += 1;
+
+            if !sym.contains_key(&temp_var) {
+                sym.insert(temp_var.clone(), vec_ty.clone());
+                locals.push((temp_var, vec_ty));
+            }
+
+            for el in elems {
+                scan_locals_expr(el, sym, locals, loop_idx, funcs, structs);
             }
         }
         _ => {}
@@ -1693,6 +1767,7 @@ pub fn collect_string_literals(funcs: &[Function]) -> Vec<String> {
             Expr::Spread(e) => visit_expr(e, literals),
             Expr::Tuple(exprs) => { for e in exprs { visit_expr(e, literals); } }
             Expr::MapLit(pairs) => { for (k, v) in pairs { visit_expr(k, literals); visit_expr(v, literals); } }
+            Expr::VecLit(elems) => { for e in elems { visit_expr(e, literals); } }
             _ => {}
         }
     }
@@ -1922,6 +1997,11 @@ pub fn generate_wat(
                 for (k, v) in pairs {
                     extract_closure_types_expr(k, funcs, array_types, used_struct_names, structs_map, fn_types);
                     extract_closure_types_expr(v, funcs, array_types, used_struct_names, structs_map, fn_types);
+                }
+            }
+            Expr::VecLit(elems) => {
+                for e in elems {
+                    extract_closure_types_expr(e, funcs, array_types, used_struct_names, structs_map, fn_types);
                 }
             }
             _ => {}
@@ -2764,6 +2844,13 @@ pub fn collect_types_from_expr(expr: &Expr, types: &mut Vec<String>, env: &HashM
             for (k, v) in pairs {
                 collect_types_from_expr(k, types, env);
                 collect_types_from_expr(v, types, env);
+            }
+        }
+        Expr::VecLit(elems) => {
+            let vec_ty = infer_expr_type(expr, env);
+            types.push(vec_ty);
+            for e in elems {
+                collect_types_from_expr(e, types, env);
             }
         }
         _ => {}

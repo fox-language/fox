@@ -159,3 +159,38 @@ pub fn test_vec_iterator() {
     }
     assert_eq(sum, 600);
 }
+
+pub fn test_vec_literal_basic() {
+    let v = [1, 3, 5];
+    assert_eq(v.len(), 3);
+    
+    let o1 = v.get(0);
+    let o1_is_some = match o1 { Some(val) => true, None() => false };
+    assert_eq(true, o1_is_some);
+    match o1 {
+        Some(val) => { assert_eq(val, 1); },
+        None() => {},
+    };
+
+    let o2 = v.get(1);
+    let o2_is_some = match o2 { Some(val) => true, None() => false };
+    assert_eq(true, o2_is_some);
+    match o2 {
+        Some(val) => { assert_eq(val, 3); },
+        None() => {},
+    };
+
+    let o3 = v.get(2);
+    let o3_is_some = match o3 { Some(val) => true, None() => false };
+    assert_eq(true, o3_is_some);
+    match o3 {
+        Some(val) => { assert_eq(val, 5); },
+        None() => {},
+    };
+}
+
+pub fn test_vec_literal_empty() {
+    let v: Vec<str> = [];
+    assert_eq(v.len(), 0);
+}
+

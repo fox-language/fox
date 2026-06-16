@@ -1567,6 +1567,9 @@ fn qualify_expr(expr: &Expr, current_ns: &str, structs: &HashMap<String, StructD
         Expr::MapLit(pairs) => Expr::MapLit(
             pairs.iter().map(|(k, v)| (qualify_expr(k, current_ns, structs), qualify_expr(v, current_ns, structs))).collect()
         ),
+        Expr::VecLit(elems) => Expr::VecLit(
+            elems.iter().map(|e| qualify_expr(e, current_ns, structs)).collect()
+        ),
         _ => expr.clone(),
     };
     if let Some(span) = get_span(expr) {
