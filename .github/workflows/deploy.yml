@@ -24,7 +24,9 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install wasm-opt
-        run: sudo apt-get update && sudo apt-get install -y binaryen
+        run: |
+          curl -sL https://github.com/WebAssembly/binaryen/releases/download/version_121/binaryen-version_121-x86_64-linux.tar.gz | tar xz
+          echo "$PWD/binaryen-version_121/bin" >> $GITHUB_PATH
 
       - name: Build fox compiler
         run: cargo build --release
