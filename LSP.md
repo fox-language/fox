@@ -181,9 +181,9 @@ impl PositionConverter {
 
 ---
 
-## Phase 2: Document Sync & Diagnostics
+## Phase 2: Document Sync & Diagnostics (Status: Completed ✅)
 
-### Step 2.1: In-Memory Document Sync
+### Step 2.1: In-Memory Document Sync (Completed)
 - **Goal**: Listen to document sync lifecycle notifications to cache working document buffers.
 - **Tasks**:
   1. Add a thread-safe map (e.g., using `std::sync::Mutex` or `dashmap` crate) to `Backend` to store document texts associated with their `Url` identifiers.
@@ -193,7 +193,7 @@ impl PositionConverter {
   - Ensure all existing unit and integration tests compile and pass.
   - Verify that standard Rust tests can be added targeting `Backend` directly, asserting that simulated editor edits correctly update the in-memory document state.
 
-### Step 2.2: Live Compiler Diagnostics Reporting
+### Step 2.2: Live Compiler Diagnostics Reporting (Completed)
 - **Goal**: Parse and type-check files on change to emit visual errors to the IDE.
 - **Tasks**:
   1. Intercept/adapt the compiler entry points (`parse_file` from `src/main.rs`) to load from the in-memory document cache instead of reading from disk.
@@ -208,9 +208,9 @@ impl PositionConverter {
 
 ---
 
-## Phase 3: Core IDE Features
+## Phase 3: Core IDE Features (Status: Completed ✅)
 
-### Step 3.1: Go to Definition
+### Step 3.1: Go to Definition (Completed)
 - **Goal**: Allow navigating to variable declarations, struct definitions, functions, and trait definitions.
 - **Tasks**:
   1. Extend the compiler's semantic analysis phase to collect references and their corresponding definition sites in a mapping (`Span` -> `Span`).
@@ -220,7 +220,7 @@ impl PositionConverter {
   - Ensure `npm test` passes.
   - Verify manually or via a unit test by launching the server, feeding a mock source code with a function call, and asserting that querying the definition at the call-site returns the span of the function declaration.
 
-### Step 3.2: Hover Support
+### Step 3.2: Hover Support (Completed)
 - **Goal**: Display type signatures and definitions when pointing the cursor at a symbol.
 - **Tasks**:
   1. During the type-checking phase, construct a map of symbol spans to type strings (e.g., `i32`, `Option<T>`, or custom struct types).
@@ -230,7 +230,7 @@ impl PositionConverter {
   - All compiler tests pass.
   - Unit tests verify that hovering over a variable returns its annotated or inferred type.
 
-### Step 3.3: Document Symbols (Outline View)
+### Step 3.3: Document Symbols (Outline View) (Completed)
 - **Goal**: Enable the outline view in editors, allowing users to quickly jump between structs, traits, constants, and functions.
 - **Tasks**:
   1. Implement `document_symbol` request on the `Backend`.
@@ -242,9 +242,9 @@ impl PositionConverter {
 
 ---
 
-## Phase 4: Client Integration
+## Phase 4: Client Integration (Status: Completed ✅)
 
-### Step 4.1: Integrate LSP Client into VS Code Extension
+### Step 4.1: Integrate LSP Client into VS Code Extension (Completed)
 - **Goal**: Update the VS Code extension to spawn and communicate with `fox lsp`.
 - **Tasks**:
   1. Open `vscode-extension/package.json`.

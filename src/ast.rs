@@ -24,22 +24,35 @@ impl<T> Spanned<T> {
     }
 }
 
-thread_local! {
-    pub static SPAN_TABLE: std::cell::RefCell<std::collections::HashMap<usize, Span>> = std::cell::RefCell::new(std::collections::HashMap::new());
+use std::sync::{OnceLock, RwLock};
+
+fn get_span_table() -> &'static RwLock<std::collections::HashMap<usize, Span>> {
+    static TABLE: OnceLock<RwLock<std::collections::HashMap<usize, Span>>> = OnceLock::new();
+    TABLE.get_or_init(|| RwLock::new(std::collections::HashMap::new()))
+}
+
+fn get_file_table() -> &'static RwLock<std::collections::HashMap<usize, String>> {
+    static TABLE: OnceLock<RwLock<std::collections::HashMap<usize, String>>> = OnceLock::new();
+    TABLE.get_or_init(|| RwLock::new(std::collections::HashMap::new()))
 }
 
 pub fn register_span<T>(node: &T, span: Span) {
     let addr = node as *const T as usize;
-    SPAN_TABLE.with(|table| {
-        table.borrow_mut().insert(addr, span);
-    });
+    get_span_table().write().unwrap().insert(addr, span);
+    let current_file = crate::diagnostics::CURRENT_FILE.with(|cf| cf.borrow().clone());
+    if let Some(file) = current_file {
+        get_file_table().write().unwrap().insert(addr, file);
+    }
 }
 
 pub fn get_span<T>(node: &T) -> Option<Span> {
     let addr = node as *const T as usize;
-    SPAN_TABLE.with(|table| {
-        table.borrow_mut().get(&addr).copied()
-    })
+    get_span_table().read().unwrap().get(&addr).copied()
+}
+
+pub fn get_file<T>(node: &T) -> Option<String> {
+    let addr = node as *const T as usize;
+    get_file_table().read().unwrap().get(&addr).cloned()
 }
 
 #[derive(Debug, PartialEq, Clone)]

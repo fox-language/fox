@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::{OnceLock, RwLock};
 
 pub mod ast;
 pub mod diagnostics;
@@ -139,8 +140,11 @@ fn parse_file(
         is_std_by_env || is_std_by_path
     };
 
-    let source =
-        std::fs::read_to_string(path).expect(&format!("Failed to read file: {:?}", path));
+    let source = if let Some(vfs_source) = crate::lsp::get_vfs_file(path) {
+        vfs_source
+    } else {
+        std::fs::read_to_string(path).expect(&format!("Failed to read file: {:?}", path))
+    };
     crate::diagnostics::set_current_file(Some(path.to_string_lossy().to_string()));
     let lexer = Lexer::new(&source);
     let mut parser = Parser::new(lexer);
@@ -633,13 +637,19 @@ fn main() {
         for param in &mut f.params {
             param.ty = qualify_type(&param.ty, &ns, &structs_map);
         }
-        f.body = f.body.iter().map(|s| qualify_stmt(s, &ns, &structs_map)).collect();
+        let qualified_body: Vec<Stmt> = f.body.iter().map(|s| qualify_stmt(s, &ns, &structs_map)).collect();
+        for (old_s, new_s) in f.body.iter().zip(&qualified_body) {
+            copy_spans_stmt(old_s, new_s);
+        }
+        f.body = qualified_body;
     }
     for c in &mut parsed_consts {
         let ns = crate::codegen::get_namespace(&c.name);
         crate::codegen::set_current_namespace(ns.clone());
         c.ty = qualify_type(&c.ty, &ns, &structs_map);
-        c.value = qualify_expr(&c.value, &ns, &structs_map);
+        let qualified_value = qualify_expr(&c.value, &ns, &structs_map);
+        copy_spans_expr(&c.value, &qualified_value);
+        c.value = qualified_value;
     }
     for imp in &mut parsed_impls {
         let ns = imp.trait_name.as_ref().map(|t| crate::codegen::get_namespace(&t.to_string())).unwrap_or_else(|| crate::codegen::get_namespace(&imp.target_ty.to_string()));
@@ -655,7 +665,11 @@ fn main() {
             for p in &mut f.params {
                 p.ty = qualify_type(&p.ty, &f_ns, &structs_map);
             }
-            f.body = f.body.iter().map(|s| qualify_stmt(s, &f_ns, &structs_map)).collect();
+            let qualified_body: Vec<Stmt> = f.body.iter().map(|s| qualify_stmt(s, &f_ns, &structs_map)).collect();
+            for (old_s, new_s) in f.body.iter().zip(&qualified_body) {
+                copy_spans_stmt(old_s, new_s);
+            }
+            f.body = qualified_body;
         }
     }
     crate::codegen::set_current_namespace("".to_string());
@@ -727,6 +741,9 @@ fn main() {
             funcs_map.insert(f.name.clone(), f.clone());
         }
         for f in &parsed_funcs {
+            if let Some(ref file) = crate::ast::get_file(f) {
+                crate::diagnostics::set_current_file(Some(file.clone()));
+            }
             crate::type_checker::validate_call_types_in_func(f, &funcs_map, &structs_map);
         }
         if crate::diagnostics::has_errors() {
@@ -1585,3 +1602,353 @@ fn qualify_expr(expr: &Expr, current_ns: &str, structs: &HashMap<String, StructD
     }
     result
 }
+
+pub fn compile_only_for_diagnostics(input_path: &Path) {
+    // Clear diagnostics first
+    crate::diagnostics::clear_diagnostics();
+
+    // ==========================================
+    // Phase 1: Parse source code & build AST
+    // ==========================================
+    let mut visited = HashSet::new();
+    let mut cache = HashMap::new();
+    let mut imports_registry = HashMap::new();
+    let mut namespace_aliases = HashMap::new();
+    let mut rename_aliases = HashMap::new();
+    let (mut parsed_structs, mut parsed_funcs, mut parsed_impls, _parsed_traits, mut parsed_consts) =
+        parse_file(input_path, None, &mut visited, &mut cache, &mut imports_registry, &mut namespace_aliases, &mut rename_aliases);
+
+    if crate::diagnostics::has_errors() {
+        return;
+    }
+
+    // ==========================================
+    // Phase 2: Expand macros
+    // ==========================================
+    crate::macro_runner::run_macros(
+        &mut parsed_structs,
+        &mut parsed_funcs,
+        &mut parsed_impls,
+        &mut parsed_consts,
+        &imports_registry,
+    );
+
+    // ==========================================
+    // Phase 3: Type check & run semantic analysis (reporting diagnostics)
+    // ==========================================
+    crate::codegen::init_codegen_env(imports_registry.clone(), rename_aliases.clone());
+    let mut structs_map = HashMap::new();
+    for s in &parsed_structs {
+        structs_map.insert(s.name.clone(), s.clone());
+    }
+    
+    for s in &mut parsed_structs {
+        let ns = crate::codegen::get_namespace(&s.name);
+        crate::codegen::set_current_namespace(ns.clone());
+        for field in &mut s.fields {
+            field.ty = qualify_type(&field.ty, &ns, &structs_map);
+        }
+    }
+    for f in &mut parsed_funcs {
+        let ns = crate::codegen::get_namespace(&f.name);
+        crate::codegen::set_current_namespace(ns.clone());
+        f.return_ty = qualify_type(&f.return_ty, &ns, &structs_map);
+        for param in &mut f.params {
+            param.ty = qualify_type(&param.ty, &ns, &structs_map);
+        }
+        let qualified_body: Vec<Stmt> = f.body.iter().map(|s| qualify_stmt(s, &ns, &structs_map)).collect();
+        for (old_s, new_s) in f.body.iter().zip(&qualified_body) {
+            copy_spans_stmt(old_s, new_s);
+        }
+        f.body = qualified_body;
+    }
+    for c in &mut parsed_consts {
+        let ns = crate::codegen::get_namespace(&c.name);
+        crate::codegen::set_current_namespace(ns.clone());
+        c.ty = qualify_type(&c.ty, &ns, &structs_map);
+        let qualified_value = qualify_expr(&c.value, &ns, &structs_map);
+        copy_spans_expr(&c.value, &qualified_value);
+        c.value = qualified_value;
+    }
+    for imp in &mut parsed_impls {
+        let ns = imp.trait_name.as_ref().map(|t| crate::codegen::get_namespace(&t.to_string())).unwrap_or_else(|| crate::codegen::get_namespace(&imp.target_ty.to_string()));
+        crate::codegen::set_current_namespace(ns.clone());
+        if let Some(ref mut trait_name) = imp.trait_name {
+            *trait_name = qualify_type(trait_name, &ns, &structs_map);
+        }
+        imp.target_ty = qualify_type(&imp.target_ty, &ns, &structs_map);
+        for f in &mut imp.methods {
+            let f_ns = crate::codegen::get_namespace(&f.name);
+            crate::codegen::set_current_namespace(f_ns.clone());
+            f.return_ty = qualify_type(&f.return_ty, &f_ns, &structs_map);
+            for p in &mut f.params {
+                p.ty = qualify_type(&p.ty, &f_ns, &structs_map);
+            }
+            let qualified_body: Vec<Stmt> = f.body.iter().map(|s| qualify_stmt(s, &f_ns, &structs_map)).collect();
+            for (old_s, new_s) in f.body.iter().zip(&qualified_body) {
+                copy_spans_stmt(old_s, new_s);
+            }
+            f.body = qualified_body;
+        }
+    }
+    crate::codegen::set_current_namespace("".to_string());
+
+    // Deduplicate consts, structs, impls
+    let mut unique_consts = Vec::new();
+    let mut const_names = HashSet::new();
+    for c in parsed_consts {
+        if const_names.insert(c.name.clone()) {
+            unique_consts.push(c);
+        }
+    }
+    parsed_consts = unique_consts;
+
+    let mut unique_structs = Vec::new();
+    let mut struct_names = HashSet::new();
+    for s in parsed_structs {
+        if struct_names.insert(s.name.clone()) {
+            unique_structs.push(s);
+        }
+    }
+    parsed_structs = unique_structs;
+
+    let mut unique_impls = Vec::new();
+    let mut impl_keys = HashSet::new();
+    for imp in parsed_impls {
+        let key = (imp.trait_name.clone(), imp.target_ty.clone());
+        if impl_keys.insert(key) {
+            unique_impls.push(imp);
+        }
+    }
+    parsed_impls = unique_impls;
+
+    for imp in &parsed_impls {
+        for target in &mut parsed_structs {
+            if target.name == imp.target_ty.to_string() {
+                for method in imp.methods.clone() {
+                    target.methods.push(method);
+                }
+            }
+        }
+    }
+
+    {
+        crate::codegen::GLOBAL_CONSTS.with(|gc| {
+            let mut map = gc.borrow_mut();
+            map.clear();
+            for c in &parsed_consts {
+                map.insert(c.name.clone(), c.ty.to_string());
+            }
+        });
+        let mut structs_map = HashMap::new();
+        for s in &parsed_structs {
+            structs_map.insert(s.name.clone(), s.clone());
+        }
+        let mut funcs_map = HashMap::new();
+        for f in &parsed_funcs {
+            funcs_map.insert(f.name.clone(), f.clone());
+        }
+        for f in &parsed_funcs {
+            if let Some(ref file) = crate::ast::get_file(f) {
+                crate::diagnostics::set_current_file(Some(file.clone()));
+            }
+            crate::type_checker::validate_call_types_in_func(f, &funcs_map, &structs_map);
+        }
+    }
+
+    {
+        let mut cache = get_ast_cache().write().unwrap();
+        cache.structs = parsed_structs;
+        cache.funcs = parsed_funcs;
+        cache.impls = parsed_impls;
+        cache.consts = parsed_consts;
+    }
+}
+
+fn copy_spans_expr(old: &Expr, new: &Expr) {
+    let span = crate::ast::get_span(old);
+    if let Some(span) = span {
+        crate::ast::register_span(new, span);
+    }
+    match (old, new) {
+        (Expr::Binary(o_l, _, o_r), Expr::Binary(n_l, _, n_r)) => {
+            copy_spans_expr(o_l, n_l);
+            copy_spans_expr(o_r, n_r);
+        }
+        (Expr::MethodCall(o_obj, _, o_args), Expr::MethodCall(n_obj, _, n_args)) => {
+            copy_spans_expr(o_obj, n_obj);
+            for (o_a, n_a) in o_args.iter().zip(n_args) {
+                copy_spans_expr(o_a, n_a);
+            }
+        }
+        (Expr::FieldAccess(o_obj, _), Expr::FieldAccess(n_obj, _)) => {
+            copy_spans_expr(o_obj, n_obj);
+        }
+        (Expr::StructInit(_, o_fields), Expr::StructInit(_, n_fields)) => {
+            for ((_, o_e), (_, n_e)) in o_fields.iter().zip(n_fields) {
+                copy_spans_expr(o_e, n_e);
+            }
+        }
+        (Expr::Call(_, o_args), Expr::Call(_, n_args)) => {
+            for (o_a, n_a) in o_args.iter().zip(n_args) {
+                copy_spans_expr(o_a, n_a);
+            }
+        }
+        (Expr::IndexAccess(o_arr, o_idx), Expr::IndexAccess(n_arr, n_idx)) => {
+            copy_spans_expr(o_arr, n_arr);
+            copy_spans_expr(o_idx, n_idx);
+        }
+        (Expr::New(_, o_args), Expr::New(_, n_args)) => {
+            for (o_a, n_a) in o_args.iter().zip(n_args) {
+                copy_spans_expr(o_a, n_a);
+            }
+        }
+        (Expr::If(o_cond, o_then, o_else), Expr::If(n_cond, n_then, n_else)) => {
+            copy_spans_expr(o_cond, n_cond);
+            let (o_stmts, o_val) = &**o_then;
+            let (n_stmts, n_val) = &**n_then;
+            for (o_s, n_s) in o_stmts.iter().zip(n_stmts) {
+                copy_spans_stmt(o_s, n_s);
+            }
+            if let (Some(o_v), Some(n_v)) = (o_val, n_val) {
+                copy_spans_expr(o_v, n_v);
+            }
+            if let (Some(o_e), Some(n_e)) = (o_else, n_else) {
+                let (o_e_stmts, o_e_val) = &**o_e;
+                let (n_e_stmts, n_e_val) = &**n_e;
+                for (o_s, n_s) in o_e_stmts.iter().zip(n_e_stmts) {
+                    copy_spans_stmt(o_s, n_s);
+                }
+                if let (Some(o_v), Some(n_v)) = (o_e_val, n_e_val) {
+                    copy_spans_expr(o_v, n_v);
+                }
+            }
+        }
+        (Expr::Match(o_cond, o_arms), Expr::Match(n_cond, n_arms)) => {
+            copy_spans_expr(o_cond, n_cond);
+            for (o_arm, n_arm) in o_arms.iter().zip(n_arms) {
+                for (o_s, n_s) in o_arm.body.iter().zip(&n_arm.body) {
+                    copy_spans_stmt(o_s, n_s);
+                }
+                if let (Some(o_v), Some(n_v)) = (&o_arm.val, &n_arm.val) {
+                    copy_spans_expr(o_v, n_v);
+                }
+            }
+        }
+        (Expr::InvokeFuncPtr(o_func, o_args), Expr::InvokeFuncPtr(n_func, n_args)) => {
+            copy_spans_expr(o_func, n_func);
+            for (o_a, n_a) in o_args.iter().zip(n_args) {
+                copy_spans_expr(o_a, n_a);
+            }
+        }
+        (Expr::Closure(o_f), Expr::Closure(n_f)) => {
+            for (o_s, n_s) in o_f.body.iter().zip(&n_f.body) {
+                copy_spans_stmt(o_s, n_s);
+            }
+        }
+        (Expr::ClosureInstantiate(_, _, o_args), Expr::ClosureInstantiate(_, _, n_args)) => {
+            for (o_a, n_a) in o_args.iter().zip(n_args) {
+                copy_spans_expr(o_a, n_a);
+            }
+        }
+        (Expr::Cast(o_e, _), Expr::Cast(n_e, _)) => {
+            copy_spans_expr(o_e, n_e);
+        }
+        (Expr::Spread(o_e), Expr::Spread(n_e)) => {
+            copy_spans_expr(o_e, n_e);
+        }
+        (Expr::Tuple(o_exprs), Expr::Tuple(n_exprs)) => {
+            for (o_e, n_e) in o_exprs.iter().zip(n_exprs) {
+                copy_spans_expr(o_e, n_e);
+            }
+        }
+        (Expr::MapLit(o_pairs), Expr::MapLit(n_pairs)) => {
+            for ((o_k, o_v), (n_k, n_v)) in o_pairs.iter().zip(n_pairs) {
+                copy_spans_expr(o_k, n_k);
+                copy_spans_expr(o_v, n_v);
+            }
+        }
+        (Expr::VecLit(o_elems), Expr::VecLit(n_elems)) => {
+            for (o_e, n_e) in o_elems.iter().zip(n_elems) {
+                copy_spans_expr(o_e, n_e);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn copy_spans_stmt(old: &Stmt, new: &Stmt) {
+    let span = crate::ast::get_span(old);
+    if let Some(span) = span {
+        crate::ast::register_span(new, span);
+    }
+    match (old, new) {
+        (Stmt::Let(_, _, o_e), Stmt::Let(_, _, n_e)) => {
+            copy_spans_expr(o_e, n_e);
+        }
+        (Stmt::LetTuple(_, o_e), Stmt::LetTuple(_, n_e)) => {
+            copy_spans_expr(o_e, n_e);
+        }
+        (Stmt::ExprStmt(o_e), Stmt::ExprStmt(n_e)) => {
+            copy_spans_expr(o_e, n_e);
+        }
+        (Stmt::Return(Some(o_e)), Stmt::Return(Some(n_e))) => {
+            copy_spans_expr(o_e, n_e);
+        }
+        (Stmt::Assign(_, o_e), Stmt::Assign(_, n_e)) | (Stmt::AssignPlus(_, o_e), Stmt::AssignPlus(_, n_e)) => {
+            copy_spans_expr(o_e, n_e);
+        }
+        (Stmt::AssignIndex(o_arr, o_idx, o_val), Stmt::AssignIndex(n_arr, n_idx, n_val)) => {
+            copy_spans_expr(o_arr, n_arr);
+            copy_spans_expr(o_idx, n_idx);
+            copy_spans_expr(o_val, n_val);
+        }
+        (Stmt::AssignField(o_obj, _, o_val), Stmt::AssignField(n_obj, _, n_val)) => {
+            copy_spans_expr(o_obj, n_obj);
+            copy_spans_expr(o_val, n_val);
+        }
+        (Stmt::While(o_cond, o_body), Stmt::While(n_cond, n_body)) => {
+            copy_spans_expr(o_cond, n_cond);
+            for (o_s, n_s) in o_body.iter().zip(n_body) {
+                copy_spans_stmt(o_s, n_s);
+            }
+        }
+        (Stmt::If(o_cond, o_then, o_else), Stmt::If(n_cond, n_then, n_else)) => {
+            copy_spans_expr(o_cond, n_cond);
+            for (o_s, n_s) in o_then.iter().zip(n_then) {
+                copy_spans_stmt(o_s, n_s);
+            }
+            if let (Some(o_e), Some(n_e)) = (o_else, n_else) {
+                for (o_s, n_s) in o_e.iter().zip(n_e) {
+                    copy_spans_stmt(o_s, n_s);
+                }
+            }
+        }
+        (Stmt::For(_, _, o_body), Stmt::For(_, _, n_body)) => {
+            for (o_s, n_s) in o_body.iter().zip(n_body) {
+                copy_spans_stmt(o_s, n_s);
+            }
+        }
+        _ => {}
+    }
+}
+
+pub struct AstCache {
+    pub structs: Vec<StructDef>,
+    pub funcs: Vec<Function>,
+    pub impls: Vec<ImplDef>,
+    pub consts: Vec<ConstDef>,
+}
+
+static AST_CACHE: OnceLock<RwLock<AstCache>> = OnceLock::new();
+
+pub fn get_ast_cache() -> &'static RwLock<AstCache> {
+    AST_CACHE.get_or_init(|| RwLock::new(AstCache {
+        structs: Vec::new(),
+        funcs: Vec::new(),
+        impls: Vec::new(),
+        consts: Vec::new(),
+    }))
+}
+
+

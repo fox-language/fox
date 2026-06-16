@@ -12,6 +12,7 @@
   "engines": {
     "vscode": "^1.85.0"
   },
+  "main": "./extension.js",
   "categories": [
     "Programming Languages"
   ],
@@ -47,5 +48,8 @@
   },
   "devDependencies": {
     "@vscode/vsce": "^3.9.2"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^10.0.0"
   }
 }

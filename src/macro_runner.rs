@@ -159,12 +159,12 @@ fn setup_wasmtime_linker(linker: &mut Linker<()>, store: &mut Store<()>, module:
     reg!("__fox_dom_console", "f_con", |caller: Caller<'_, ()>, level: i32, msg: Option<Rooted<ExternRef>>| -> Result<(), wasmtime::Error> {
         let msg_str = to_str(&caller, msg)?;
         match level {
-            1 => println!("{}", msg_str),
-            2 => println!("INFO: {}", msg_str),
+            1 => eprintln!("{}", msg_str),
+            2 => eprintln!("INFO: {}", msg_str),
             3 => eprintln!("WARN: {}", msg_str),
             4 => eprintln!("ERROR: {}", msg_str),
-            5 => println!("DEBUG: {}", msg_str),
-            _ => println!("{}", msg_str),
+            5 => eprintln!("DEBUG: {}", msg_str),
+            _ => eprintln!("{}", msg_str),
         }
         Ok(())
     });
