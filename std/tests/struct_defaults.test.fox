@@ -1,5 +1,5 @@
 use std::testing::{assert_eq};
-use std::collections::{Option};
+use std::collections::{Option, Vec};
 
 struct Nested {
     val: i32;
@@ -13,6 +13,7 @@ struct TestStruct {
     e: Option<i32>;
     f: []i32;
     g: Nested;
+    h: Vec<i32>;
 }
 
 pub fn test_struct_defaults() {
@@ -37,4 +38,7 @@ pub fn test_struct_defaults() {
 
     let g_is_null: bool = s.g == default;
     assert_eq(true, g_is_null);
+
+    // Vec defaults to Vec::new() (empty vec)
+    assert_eq(0, s.h.len());
 }

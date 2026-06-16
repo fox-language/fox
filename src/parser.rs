@@ -4,6 +4,16 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 static NESTED_TUPLE_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
+fn is_system_file() -> bool {
+    let file_opt = crate::diagnostics::CURRENT_FILE.with(|f| f.borrow().clone());
+    if let Some(path_str) = file_opt {
+        path_str.contains("/std/") || path_str.contains("\\std\\") || path_str.starts_with("std/") || path_str.starts_with("std\\") ||
+        path_str.contains("/benchmarks/") || path_str.contains("\\benchmarks\\") || path_str.starts_with("benchmarks/") || path_str.starts_with("benchmarks\\")
+    } else {
+        false
+    }
+}
+
 #[derive(Debug, Clone)]
 enum ParsePattern {
     Var(String, Type), // name, type
@@ -192,6 +202,9 @@ impl<'a> Parser<'a> {
         if self.current_token == Token::LBracket {
             self.advance();
             self.expect(Token::RBracket);
+            if !is_system_file() {
+                crate::diagnostics::report_error("Raw array types '[]T' are not allowed outside the standard library and benchmarks".to_string(), Some(self.current_span));
+            }
             let inner = self.parse_type();
             Type::Array(Box::new(inner))
         } else {
@@ -1589,6 +1602,9 @@ impl<'a> Parser<'a> {
             Token::New => {
                 self.advance();
                 if self.current_token == Token::LBracket {
+                    if !is_system_file() {
+                        crate::diagnostics::report_error("Raw array allocations are not allowed outside the standard library and benchmarks".to_string(), Some(self.current_span));
+                    }
                     self.advance();
                     if self.current_token == Token::RBracket {
                         self.advance();

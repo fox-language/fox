@@ -534,6 +534,54 @@ pub fn test_error(): void {
         }
     });
 
+    test("fails when raw array types are used outside standard library", () => {
+        const errorTestFile = path.join(outDir, "error_test.fox");
+        fs.writeFileSync(errorTestFile, `
+pub fn test_error(): void {
+    let a: []i32 = default;
+}
+`);
+        try {
+            execSync(`cargo run -- "${errorTestFile}" -o "${outDir}"`, {
+                stdio: 'pipe',
+            });
+            throw new Error("Compilation should have failed but succeeded");
+        } catch (err) {
+            const stderr = err.stderr ? err.stderr.toString() : err.message;
+            if (!stderr.includes("Raw array types '[]T' are not allowed outside the standard library and benchmarks")) {
+                throw new Error(`Unexpected compiler output: ${stderr}`);
+            }
+        } finally {
+            if (fs.existsSync(errorTestFile)) {
+                fs.unlinkSync(errorTestFile);
+            }
+        }
+    });
+
+    test("fails when raw array allocations are used outside standard library", () => {
+        const errorTestFile = path.join(outDir, "error_test.fox");
+        fs.writeFileSync(errorTestFile, `
+pub fn test_error(): void {
+    let a = new [10]i32;
+}
+`);
+        try {
+            execSync(`cargo run -- "${errorTestFile}" -o "${outDir}"`, {
+                stdio: 'pipe',
+            });
+            throw new Error("Compilation should have failed but succeeded");
+        } catch (err) {
+            const stderr = err.stderr ? err.stderr.toString() : err.message;
+            if (!stderr.includes("Raw array allocations are not allowed outside the standard library and benchmarks")) {
+                throw new Error(`Unexpected compiler output: ${stderr}`);
+            }
+        } finally {
+            if (fs.existsSync(errorTestFile)) {
+                fs.unlinkSync(errorTestFile);
+            }
+        }
+    });
+
     test("fails when struct instantiation has a field type mismatch", () => {
         const errorTestFile = path.join(outDir, "error_test.fox");
         fs.writeFileSync(errorTestFile, `

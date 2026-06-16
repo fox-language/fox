@@ -29,7 +29,11 @@ pub fn generate_default_value_wat(
         wat.push_str(&format!("    ref.null ${}\n    ref.null any\n    struct.new ${}\n", sig_name, fat_name));
     } else {
         let resolved = resolve_struct_name(expected_ty, structs);
-        if structs.contains_key(&resolved) {
+        if resolved.starts_with("vec::Vec") || resolved.contains("vec::Vec") || resolved.contains("std_collections_vec_Vec") {
+            let func_name = format!("{}::new", resolved);
+            let safe_func_name = sanitize_wat_name(&func_name);
+            wat.push_str(&format!("    call ${}\n", safe_func_name));
+        } else if structs.contains_key(&resolved) {
             wat.push_str(&format!("    ref.null ${}\n", sanitize_wat_name(&resolved)));
         } else {
             panic!("Cannot infer default value for type '{}'", expected_ty);
@@ -2893,6 +2897,17 @@ pub fn dead_code_eliminate(
         collect_callees_expr(&c.value, &mut tmp_sym, &func_map, &structs_map, &mut global_callees);
     }
     work.extend(global_callees);
+
+    // Keep Vec constructors alive since they are needed for default values of omitted fields
+    for s in structs {
+        let name = &s.name;
+        if name.starts_with("vec::Vec") || name.contains("vec::Vec") || name.contains("std_collections_vec_Vec") {
+            let func_name = format!("{}::new", name);
+            if func_map.contains_key(&func_name) {
+                work.push(func_name);
+            }
+        }
+    }
 
     while let Some(name) = work.pop() {
         if !reachable.insert(name.clone()) {
