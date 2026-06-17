@@ -696,10 +696,33 @@ fn run_macros_inner(
         return Ok(false);
     }
 
-    // Parse the generated code
+    // Parse the generated code. If the macros were applied to a struct that
+    // lives in the standard library or benchmarks, the generated code is
+    // allowed to use raw array syntax that those files may contain.
+    let macro_source_file = parsed_structs
+        .iter()
+        .filter(|s| !s.attributes.is_empty())
+        .find_map(|s| {
+            let file = crate::ast::get_file(s);
+            file.filter(|path| {
+                path.contains("/std/")
+                    || path.contains("\\std\\")
+                    || path.starts_with("std/")
+                    || path.starts_with("std\\")
+                    || path.contains("/benchmarks/")
+                    || path.contains("\\benchmarks\\")
+                    || path.starts_with("benchmarks/")
+                    || path.starts_with("benchmarks\\")
+            })
+        });
+    let previous_file = crate::diagnostics::CURRENT_FILE.with(|f| f.borrow().clone());
+    crate::diagnostics::set_current_file(macro_source_file);
+
     let lexer = crate::lexer::Lexer::new(&generated_code);
     let mut parser = crate::parser::Parser::new(lexer);
     let items = parser.parse_module();
+
+    crate::diagnostics::set_current_file(previous_file);
 
     let mut added_anything = false;
     for item in items {
