@@ -45,29 +45,114 @@ pub fn lookup_builtin_intrinsic(parent_ty: &str, method: &str) -> Option<Builtin
 }
 
 fn lookup_str_intrinsic(method: &str) -> Option<BuiltinIntrinsic> {
-    let imp = |wasm_fn, module, import_name, param_wasm_tys, result_wasm, return_ty| BuiltinIntrinsic {
-        wasm_fn: Some(wasm_fn),
-        module: Some(module),
-        import_name: Some(import_name),
-        param_wasm_tys,
-        result_wasm,
-        return_ty,
-        uses_wasm_helper: false,
-        is_opcode: false,
-    };
+    let imp =
+        |wasm_fn, module, import_name, param_wasm_tys, result_wasm, return_ty| BuiltinIntrinsic {
+            wasm_fn: Some(wasm_fn),
+            module: Some(module),
+            import_name: Some(import_name),
+            param_wasm_tys,
+            result_wasm,
+            return_ty,
+            uses_wasm_helper: false,
+            is_opcode: false,
+        };
     match method {
-        "len" => Some(imp("$fox_str_len", "wasm:js-string", "length", &[], "i32", "i32")),
-        "char_at" => Some(imp("$fox_str_char_at", "wasm:js-string", "charCodeAt", &["i32"], "i32", "byte")),
-        "starts_with" => Some(imp("$fox_str_starts_with", "env", "__fox_str_starts_with", &["externref"], "i32", "bool")),
-        "ends_with" => Some(imp("$fox_str_ends_with", "env", "__fox_str_ends_with", &["externref"], "i32", "bool")),
-        "contains" => Some(imp("$fox_str_contains", "env", "__fox_str_contains", &["externref"], "i32", "bool")),
-        "index_of" => Some(imp("$fox_str_index_of", "env", "__fox_str_index_of", &["externref"], "i32", "i32")),
-        "last_index_of" => Some(imp("$fox_str_last_index_of", "env", "__fox_str_last_index_of", &["externref"], "i32", "i32")),
-        "is_empty" => Some(imp("$fox_str_is_empty", "env", "__fox_str_is_empty", &[], "i32", "bool")),
-        "eq" => Some(imp("$fox_str_eq", "env", "__fox_str_eq", &["externref"], "i32", "bool")),
-        "join" => Some(imp("$fox_str_join", "env", "__fox_str_join", &["externref"], "externref", "str")),
-        "compare" => Some(imp("$fox_str_compare", "env", "__fox_str_compare", &["externref"], "i32", "i32")),
-        "substring" => Some(imp("$fox_str_substring", "env", "__fox_str_substring", &["i32", "i32"], "externref", "str")),
+        "len" => Some(imp(
+            "$fox_str_len",
+            "wasm:js-string",
+            "length",
+            &[],
+            "i32",
+            "i32",
+        )),
+        "char_at" => Some(imp(
+            "$fox_str_char_at",
+            "wasm:js-string",
+            "charCodeAt",
+            &["i32"],
+            "i32",
+            "byte",
+        )),
+        "starts_with" => Some(imp(
+            "$fox_str_starts_with",
+            "env",
+            "__fox_str_starts_with",
+            &["externref"],
+            "i32",
+            "bool",
+        )),
+        "ends_with" => Some(imp(
+            "$fox_str_ends_with",
+            "env",
+            "__fox_str_ends_with",
+            &["externref"],
+            "i32",
+            "bool",
+        )),
+        "contains" => Some(imp(
+            "$fox_str_contains",
+            "env",
+            "__fox_str_contains",
+            &["externref"],
+            "i32",
+            "bool",
+        )),
+        "index_of" => Some(imp(
+            "$fox_str_index_of",
+            "env",
+            "__fox_str_index_of",
+            &["externref"],
+            "i32",
+            "i32",
+        )),
+        "last_index_of" => Some(imp(
+            "$fox_str_last_index_of",
+            "env",
+            "__fox_str_last_index_of",
+            &["externref"],
+            "i32",
+            "i32",
+        )),
+        "is_empty" => Some(imp(
+            "$fox_str_is_empty",
+            "env",
+            "__fox_str_is_empty",
+            &[],
+            "i32",
+            "bool",
+        )),
+        "eq" => Some(imp(
+            "$fox_str_eq",
+            "env",
+            "__fox_str_eq",
+            &["externref"],
+            "i32",
+            "bool",
+        )),
+        "join" => Some(imp(
+            "$fox_str_join",
+            "env",
+            "__fox_str_join",
+            &["externref"],
+            "externref",
+            "str",
+        )),
+        "compare" => Some(imp(
+            "$fox_str_compare",
+            "env",
+            "__fox_str_compare",
+            &["externref"],
+            "i32",
+            "i32",
+        )),
+        "substring" => Some(imp(
+            "$fox_str_substring",
+            "env",
+            "__fox_str_substring",
+            &["i32", "i32"],
+            "externref",
+            "str",
+        )),
         "bytes" => Some(BuiltinIntrinsic {
             wasm_fn: Some("$fox_str_bytes"),
             module: None,
@@ -96,9 +181,8 @@ fn lookup_float_intrinsic(prefix: &str, method: &str) -> Option<BuiltinIntrinsic
     };
     let has_arg = matches!(method, "min" | "max");
     let param_wasm_tys: &'static [&'static str] = if has_arg {
-        Box::leak(
-            vec![prefix_static].into_boxed_slice() as Box<[&'static str]>
-        ) as &'static [&'static str]
+        Box::leak(vec![prefix_static].into_boxed_slice() as Box<[&'static str]>)
+            as &'static [&'static str]
     } else {
         &[]
     };
@@ -125,9 +209,8 @@ fn lookup_int_intrinsic(prefix: &str, method: &str) -> Option<BuiltinIntrinsic> 
     };
     let has_arg = matches!(method, "min" | "max");
     let param_wasm_tys: &'static [&'static str] = if has_arg {
-        Box::leak(
-            vec![prefix_static].into_boxed_slice() as Box<[&'static str]>
-        ) as &'static [&'static str]
+        Box::leak(vec![prefix_static].into_boxed_slice() as Box<[&'static str]>)
+            as &'static [&'static str]
     } else {
         &[]
     };

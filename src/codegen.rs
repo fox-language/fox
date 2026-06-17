@@ -1,15 +1,14 @@
-use std::collections::{HashMap, HashSet};
 use crate::ast::*;
-
+use std::collections::{HashMap, HashSet};
 
 pub mod intrinsics;
 pub mod js;
 pub mod wat;
 
-pub use wat::*;
-pub use js::*;
-pub use intrinsics::*;
 pub use crate::type_checker::{get_expr_type, validate_match_patterns};
+pub use intrinsics::*;
+pub use js::*;
+pub use wat::*;
 
 thread_local! {
     pub static GLOBAL_CONSTS: std::cell::RefCell<HashMap<String, String>> = std::cell::RefCell::new(HashMap::new());
@@ -31,7 +30,6 @@ pub fn set_current_namespace(ns: String) {
         *c.borrow_mut() = ns;
     });
 }
-
 
 pub fn init_codegen_env(
     imports_registry: HashMap<String, HashSet<String>>,
@@ -87,12 +85,10 @@ pub fn canonical_type(ty: &Type) -> Type {
         }
         Type::Array(inner) => Type::Array(Box::new(canonical_type(inner))),
         Type::Tuple(elems) => Type::Tuple(elems.iter().map(|el| canonical_type(el)).collect()),
-        Type::Function(params, ret) => {
-            Type::Function(
-                params.iter().map(|p| canonical_type(p)).collect(),
-                Box::new(canonical_type(ret)),
-            )
-        }
+        Type::Function(params, ret) => Type::Function(
+            params.iter().map(|p| canonical_type(p)).collect(),
+            Box::new(canonical_type(ret)),
+        ),
         _ => ty.clone(),
     }
 }
@@ -102,7 +98,10 @@ pub fn canonical_type_string(ty_str: &str) -> String {
     if let Ok(ty) = Type::from_str(ty_str) {
         let canonical_ty = canonical_type(&ty);
         let s = canonical_ty.to_string();
-        s.replace('<', "_").replace('>', "").replace(',', "_").replace(" ", "")
+        s.replace('<', "_")
+            .replace('>', "")
+            .replace(',', "_")
+            .replace(" ", "")
     } else {
         ty_str.to_string()
     }
@@ -129,7 +128,8 @@ pub fn is_compatible(actual: &str, expected: &str, structs: &HashMap<String, Str
     }
 
     let is_actual_32 = actual == "i32" || actual == "u32" || actual == "byte" || actual == "bool";
-    let is_expected_32 = expected == "i32" || expected == "u32" || expected == "byte" || expected == "bool";
+    let is_expected_32 =
+        expected == "i32" || expected == "u32" || expected == "byte" || expected == "bool";
     if is_actual_32 && is_expected_32 {
         return true;
     }
@@ -161,9 +161,20 @@ pub fn is_compatible(actual: &str, expected: &str, structs: &HashMap<String, Str
     false
 }
 
-pub fn emit_widening(_wat: &mut String, actual_ty: &str, expected_ty: &str, structs: &HashMap<String, StructDef>) {
+pub fn emit_widening(
+    _wat: &mut String,
+    actual_ty: &str,
+    expected_ty: &str,
+    structs: &HashMap<String, StructDef>,
+) {
     if !is_compatible(actual_ty, expected_ty, structs) {
-        crate::diagnostics::report_error(format!("Type mismatch: expected '{}', found '{}'", expected_ty, actual_ty), None);
+        crate::diagnostics::report_error(
+            format!(
+                "Type mismatch: expected '{}', found '{}'",
+                expected_ty, actual_ty
+            ),
+            None,
+        );
     }
 }
 
@@ -171,7 +182,13 @@ pub fn eval_const_val(expr: &Expr) -> f64 {
     match expr {
         Expr::Float(f) => *f,
         Expr::Integer(s) => s.parse::<f64>().unwrap_or(0.0),
-        Expr::Bool(b) => if *b { 1.0 } else { 0.0 },
+        Expr::Bool(b) => {
+            if *b {
+                1.0
+            } else {
+                0.0
+            }
+        }
         Expr::Binary(left, op, right) => {
             let l = eval_const_val(left);
             let r = eval_const_val(right);
@@ -186,9 +203,7 @@ pub fn eval_const_val(expr: &Expr) -> f64 {
         }
         Expr::Identifier(n) => {
             if let Some(resolved) = resolve_const_name(n) {
-                GLOBAL_CONST_VALUES.with(|gcv| {
-                    gcv.borrow().get(&resolved).cloned().unwrap_or(0.0)
-                })
+                GLOBAL_CONST_VALUES.with(|gcv| gcv.borrow().get(&resolved).cloned().unwrap_or(0.0))
             } else {
                 panic!("Unknown constant identifier: {}", n);
             }
@@ -280,27 +295,43 @@ pub fn get_wasm_default_const(wasm_ty: &str) -> String {
     }
 }
 
-
-
-
 pub fn sanitize_name(s: &str) -> String {
     s.replace("<", "_")
-     .replace(">", "_")
-     .replace(",", "_")
-     .replace("[", "Slice_")
-     .replace("]", "_")
-     .replace("(", "_")
-     .replace(")", "_")
-     .replace(" ", "")
+        .replace(">", "_")
+        .replace(",", "_")
+        .replace("[", "Slice_")
+        .replace("]", "_")
+        .replace("(", "_")
+        .replace(")", "_")
+        .replace(" ", "")
 }
 
 pub fn strip_mangled_namespaces(s: &str) -> String {
-    let segments: Vec<&str> = s.split(|c| c == ':' || c == '_').filter(|seg| !seg.is_empty()).collect();
+    let segments: Vec<&str> = s
+        .split(|c| c == ':' || c == '_')
+        .filter(|seg| !seg.is_empty())
+        .collect();
     let mut kept = Vec::new();
     for seg in segments {
         let first_char = seg.chars().next();
         let is_uppercase = first_char.map(|c| c.is_ascii_uppercase()).unwrap_or(false);
-        let is_primitive = matches!(seg, "i32" | "i64" | "u32" | "u64" | "f32" | "f64" | "str" | "void" | "byte" | "bool" | "anyref" | "externref" | "tuple" | "Slice");
+        let is_primitive = matches!(
+            seg,
+            "i32"
+                | "i64"
+                | "u32"
+                | "u64"
+                | "f32"
+                | "f64"
+                | "str"
+                | "void"
+                | "byte"
+                | "bool"
+                | "anyref"
+                | "externref"
+                | "tuple"
+                | "Slice"
+        );
         if is_uppercase || is_primitive {
             kept.push(seg);
         }
@@ -352,10 +383,12 @@ pub fn resolve_struct_name(name: &str, structs: &HashMap<String, StructDef>) -> 
     };
     let base_name = &base_name_str;
     let current_ns = CURRENT_NAMESPACE.with(|c| c.borrow().clone());
-    
+
     let mut possible_matches = Vec::new();
     for key in structs.keys() {
-        if key.ends_with(&format!("::{}", normalized_name)) || normalized_name.ends_with(&format!("::{}", key)) {
+        if key.ends_with(&format!("::{}", normalized_name))
+            || normalized_name.ends_with(&format!("::{}", key))
+        {
             let target_ns = get_namespace(key);
             if target_ns == current_ns && current_ns != "" {
                 return key.clone();
@@ -385,7 +418,10 @@ pub fn resolve_struct_name(name: &str, structs: &HashMap<String, StructDef>) -> 
     if name.contains('<') {
         let mut base_possible = Vec::new();
         for key in structs.keys() {
-            if key == base_name || key.ends_with(&format!("::{}", base_name)) || base_name.ends_with(&format!("::{}", key)) {
+            if key == base_name
+                || key.ends_with(&format!("::{}", base_name))
+                || base_name.ends_with(&format!("::{}", key))
+            {
                 base_possible.push(key.clone());
             }
         }
@@ -415,7 +451,12 @@ pub fn resolve_struct_name(name: &str, structs: &HashMap<String, StructDef>) -> 
     normalized_name
 }
 
-pub fn resolve_func_name(name: &str, arg_types: &[String], funcs: &HashMap<String, Function>, structs: &HashMap<String, StructDef>) -> String {
+pub fn resolve_func_name(
+    name: &str,
+    arg_types: &[String],
+    funcs: &HashMap<String, Function>,
+    structs: &HashMap<String, StructDef>,
+) -> String {
     resolve_func_name_impl(name, arg_types, "unknown", funcs, structs)
 }
 
@@ -447,7 +488,10 @@ fn func_args_compatible(func: &Function, arg_types: &[String]) -> bool {
     if arg_types.len() < fixed_params.len() {
         return false;
     }
-    fixed_params.iter().zip(arg_types.iter()).all(|(p, a)| p.ty.to_string() == *a || p.ty.to_string() == "unknown" || a == "unknown")
+    fixed_params
+        .iter()
+        .zip(arg_types.iter())
+        .all(|(p, a)| p.ty.to_string() == *a || p.ty.to_string() == "unknown" || a == "unknown")
 }
 
 fn pick_best_candidate<'a>(
@@ -460,34 +504,45 @@ fn pick_best_candidate<'a>(
     if candidates.is_empty() {
         return None;
     }
-    let mut compatible: Vec<&String> = candidates.iter().cloned().filter(|k| {
-        if let Some(f) = funcs.get(*k) {
-            if !func_args_compatible(f, arg_types) {
-                return false;
-            }
-            if expected_ret_ty != "" && expected_ret_ty != "unknown" {
-                let f_ret_resolved = resolve_struct_name(&f.return_ty.to_string(), structs);
-                let expected_resolved = resolve_struct_name(expected_ret_ty, structs);
-                if f_ret_resolved != expected_resolved {
+    let mut compatible: Vec<&String> = candidates
+        .iter()
+        .cloned()
+        .filter(|k| {
+            if let Some(f) = funcs.get(*k) {
+                if !func_args_compatible(f, arg_types) {
                     return false;
                 }
+                if expected_ret_ty != "" && expected_ret_ty != "unknown" {
+                    let f_ret_resolved = resolve_struct_name(&f.return_ty.to_string(), structs);
+                    let expected_resolved = resolve_struct_name(expected_ret_ty, structs);
+                    if f_ret_resolved != expected_resolved {
+                        return false;
+                    }
+                }
+                true
+            } else {
+                false
             }
-            true
-        } else {
-            false
-        }
-    }).collect();
-    
+        })
+        .collect();
+
     if compatible.is_empty() {
-        compatible = candidates.iter().cloned().filter(|k| {
-            funcs.get(*k).map(|f| func_args_compatible(f, arg_types)).unwrap_or(false)
-        }).collect();
+        compatible = candidates
+            .iter()
+            .cloned()
+            .filter(|k| {
+                funcs
+                    .get(*k)
+                    .map(|f| func_args_compatible(f, arg_types))
+                    .unwrap_or(false)
+            })
+            .collect();
     }
-    
+
     if compatible.is_empty() {
         compatible = candidates;
     }
-    
+
     compatible.sort_by_key(|k| k.split("::").count());
     compatible.first().cloned()
 }
@@ -509,7 +564,11 @@ pub fn resolve_func_name_impl(
             colon_depth += 1;
         } else if colon_chars[colon_i] == '>' {
             colon_depth -= 1;
-        } else if colon_chars[colon_i] == ':' && colon_i + 1 < colon_chars.len() && colon_chars[colon_i+1] == ':' && colon_depth == 0 {
+        } else if colon_chars[colon_i] == ':'
+            && colon_i + 1 < colon_chars.len()
+            && colon_chars[colon_i + 1] == ':'
+            && colon_depth == 0
+        {
             last_colon_idx = Some(colon_i);
             colon_i += 1;
         }
@@ -537,17 +596,27 @@ pub fn resolve_func_name_impl(
     let mut explicit_args = Vec::new();
     let base_name_str = if let Some(start) = resolved_name_str.find('<') {
         let end = resolved_name_str.rfind('>').unwrap_or(start);
-        
+
         let args_str = &resolved_name_str[start + 1..end];
         let mut depth = 0;
         let mut current = String::new();
         for c in args_str.chars() {
-            if c == '<' { depth += 1; current.push(c); }
-            else if c == '>' { depth -= 1; current.push(c); }
-            else if c == ',' && depth == 0 { explicit_args.push(current.trim().to_string()); current.clear(); }
-            else { current.push(c); }
+            if c == '<' {
+                depth += 1;
+                current.push(c);
+            } else if c == '>' {
+                depth -= 1;
+                current.push(c);
+            } else if c == ',' && depth == 0 {
+                explicit_args.push(current.trim().to_string());
+                current.clear();
+            } else {
+                current.push(c);
+            }
         }
-        if !current.is_empty() { explicit_args.push(current.trim().to_string()); }
+        if !current.is_empty() {
+            explicit_args.push(current.trim().to_string());
+        }
 
         let mut b = resolved_name_str[..start].to_string();
         if end + 1 < resolved_name_str.len() {
@@ -564,7 +633,8 @@ pub fn resolve_func_name_impl(
     if template_func.is_none() {
         let mut candidates = Vec::new();
         for (k, _v) in funcs {
-            if k.ends_with(&format!("::{}", base_name)) || base_name.ends_with(&format!("::{}", k)) {
+            if k.ends_with(&format!("::{}", base_name)) || base_name.ends_with(&format!("::{}", k))
+            {
                 let target_ns = get_namespace(k);
                 if target_ns == current_ns || current_ns == "" {
                     candidates.push(k);
@@ -585,7 +655,9 @@ pub fn resolve_func_name_impl(
             }
         }
         if !candidates.is_empty() {
-            if let Some(best) = pick_best_candidate(candidates, arg_types, expected_ret_ty, funcs, structs) {
+            if let Some(best) =
+                pick_best_candidate(candidates, arg_types, expected_ret_ty, funcs, structs)
+            {
                 template_func = funcs.get(best);
             }
         }
@@ -600,14 +672,18 @@ pub fn resolve_func_name_impl(
         let mut shortened = base_name.to_string();
         while let Some(pos) = shortened.find("::") {
             shortened = shortened[pos + 2..].to_string();
-            if shortened.is_empty() { break; }
+            if shortened.is_empty() {
+                break;
+            }
             let mut candidates: Vec<&String> = Vec::new();
             for k in funcs.keys() {
                 if k.ends_with(&format!("::{}", shortened)) || shortened == k.as_str() {
                     candidates.push(k);
                 }
             }
-            if let Some(best) = pick_best_candidate(candidates, arg_types, expected_ret_ty, funcs, structs) {
+            if let Some(best) =
+                pick_best_candidate(candidates, arg_types, expected_ret_ty, funcs, structs)
+            {
                 template_func = funcs.get(best);
                 break;
             }
@@ -626,7 +702,9 @@ pub fn resolve_func_name_impl(
                 candidates.push(k);
             }
         }
-        if let Some(best) = pick_best_candidate(candidates, arg_types, expected_ret_ty, funcs, structs) {
+        if let Some(best) =
+            pick_best_candidate(candidates, arg_types, expected_ret_ty, funcs, structs)
+        {
             template_func = funcs.get(best);
         }
     }
@@ -672,7 +750,9 @@ pub fn resolve_func_name_impl(
                     candidates.push(key);
                 }
             }
-            if let Some(best) = pick_best_candidate(candidates, arg_types, expected_ret_ty, funcs, structs) {
+            if let Some(best) =
+                pick_best_candidate(candidates, arg_types, expected_ret_ty, funcs, structs)
+            {
                 return best.clone();
             }
             // Try progressively stripping leading namespace segments
@@ -681,7 +761,9 @@ pub fn resolve_func_name_impl(
                 let mut shortened = base_name.to_string();
                 while let Some(pos) = shortened.find("::") {
                     shortened = shortened[pos + 2..].to_string();
-                    if shortened.is_empty() { break; }
+                    if shortened.is_empty() {
+                        break;
+                    }
                     if funcs.contains_key(&shortened) {
                         return shortened;
                     }
@@ -691,7 +773,9 @@ pub fn resolve_func_name_impl(
                             candidates.push(key);
                         }
                     }
-                    if let Some(best) = pick_best_candidate(candidates, arg_types, expected_ret_ty, funcs, structs) {
+                    if let Some(best) =
+                        pick_best_candidate(candidates, arg_types, expected_ret_ty, funcs, structs)
+                    {
                         return best.clone();
                     }
                 }
@@ -705,7 +789,9 @@ pub fn resolve_func_name_impl(
                         candidates.push(key);
                     }
                 }
-                if let Some(best) = pick_best_candidate(candidates, arg_types, expected_ret_ty, funcs, structs) {
+                if let Some(best) =
+                    pick_best_candidate(candidates, arg_types, expected_ret_ty, funcs, structs)
+                {
                     return best.clone();
                 }
             }
@@ -721,7 +807,11 @@ pub fn resolve_func_name_impl(
     if !mono_args.is_empty() {
         for i in (1..=mono_args.len()).rev() {
             let partial_args = &mono_args[..i];
-            let suffix = partial_args.iter().map(|s| sanitize_wat_name(s)).collect::<Vec<_>>().join("_");
+            let suffix = partial_args
+                .iter()
+                .map(|s| sanitize_wat_name(s))
+                .collect::<Vec<_>>()
+                .join("_");
             let mono_names = if let Some(ref tf) = template_func {
                 if tf.parent_struct.is_some() {
                     let mut parts: Vec<&str> = tf.name.split("::").collect();
@@ -744,7 +834,7 @@ pub fn resolve_func_name_impl(
                     vec![format!("{}_{}", base_name, suffix)]
                 }
             };
-            
+
             for mono_name in &mono_names {
                 if funcs.contains_key(mono_name) {
                     return mono_name.clone();
@@ -769,12 +859,14 @@ pub fn resolve_func_name_impl(
                         }
                     }
                 }
-                
+
                 // Try progressive namespace stripping from mono_name
                 let mut shortened = mono_name.clone();
                 while let Some(pos) = shortened.find("::") {
                     shortened = shortened[pos + 2..].to_string();
-                    if shortened.is_empty() { break; }
+                    if shortened.is_empty() {
+                        break;
+                    }
                     for key in funcs.keys() {
                         if key.ends_with(&format!("::{}", shortened)) || key == &shortened {
                             let target_ns = get_namespace(key);
@@ -825,8 +917,13 @@ pub fn resolve_func_name_impl(
             candidates.push(key);
         }
     }
-    let all_candidates = candidate_ns_match.into_iter().chain(candidate_imported.into_iter()).collect::<Vec<_>>();
-    if let Some(best) = pick_best_candidate(all_candidates, arg_types, expected_ret_ty, funcs, structs) {
+    let all_candidates = candidate_ns_match
+        .into_iter()
+        .chain(candidate_imported.into_iter())
+        .collect::<Vec<_>>();
+    if let Some(best) =
+        pick_best_candidate(all_candidates, arg_types, expected_ret_ty, funcs, structs)
+    {
         return best.clone();
     }
     name.to_string()
@@ -968,7 +1065,10 @@ fn normalize_fn_ty(fn_ty: &str) -> String {
         let normalized_params: Vec<String> = if params_str.is_empty() {
             vec![]
         } else {
-            params_str.split(',').map(|p| normalize_type_name(p.trim())).collect()
+            params_str
+                .split(',')
+                .map(|p| normalize_type_name(p.trim()))
+                .collect()
         };
         let normalized_ret = normalize_type_name(ret_ty);
         format!("fn({}):{}", normalized_params.join(","), normalized_ret)
@@ -1002,8 +1102,8 @@ pub fn extract_fn_return_type(fn_ty: &str) -> &str {
             ')' => {
                 depth -= 1;
                 if depth == 0 {
-                    if fn_ty.get(i+1..i+2) == Some(":") {
-                        return &fn_ty[i+2..];
+                    if fn_ty.get(i + 1..i + 2) == Some(":") {
+                        return &fn_ty[i + 2..];
                     }
                     break;
                 }
@@ -1017,13 +1117,6 @@ pub fn extract_fn_return_type(fn_ty: &str) -> &str {
 /// Description of an inherent method on a builtin type (`str`, `f64`, `f32`,
 /// `i32`, `i64`, `[]T`) declared in `std::builtin`. The body is provided
 /// either by emitting a single Wasm opcode or by calling a Wasm import.
-
-
-
-
-
-
-
 
 /// Emit code to box a value to anyref. The value to be boxed must already be
 /// on the stack; this just appends the boxing instructions.
@@ -1043,15 +1136,6 @@ pub fn extract_fn_return_type(fn_ty: &str) -> &str {
 /// string, dispatches on arg type via ref.test, and builds the result using
 /// wasm:js-string builtins.
 
-
-
-
-
-
-
-
-
-
 fn infer_expr_type(expr: &Expr, env: &HashMap<String, String>) -> String {
     match expr {
         Expr::Identifier(n) => {
@@ -1059,7 +1143,10 @@ fn infer_expr_type(expr: &Expr, env: &HashMap<String, String>) -> String {
                 t.clone()
             } else if let Some(resolved) = resolve_const_name(n) {
                 GLOBAL_CONSTS.with(|gc| {
-                    gc.borrow().get(&resolved).cloned().unwrap_or_else(|| "i32".to_string())
+                    gc.borrow()
+                        .get(&resolved)
+                        .cloned()
+                        .unwrap_or_else(|| "i32".to_string())
                 })
             } else {
                 "i32".to_string()
@@ -1110,7 +1197,7 @@ fn infer_expr_type(expr: &Expr, env: &HashMap<String, String>) -> String {
                 if method == "get" {
                     if let Some(start) = obj_ty.find(',') {
                         if let Some(end) = obj_ty.find('>') {
-                            let v_ty = obj_ty[start+1..end].trim().to_string();
+                            let v_ty = obj_ty[start + 1..end].trim().to_string();
                             return format!("Option<{}>", v_ty);
                         }
                     }
@@ -1118,7 +1205,7 @@ fn infer_expr_type(expr: &Expr, env: &HashMap<String, String>) -> String {
                 if method == "iter" {
                     if let Some(start) = obj_ty.find('<') {
                         if let Some(end) = obj_ty.rfind('>') {
-                            let inner = &obj_ty[start+1..end];
+                            let inner = &obj_ty[start + 1..end];
                             return format!("MapIterator<{}>", inner);
                         }
                     }
@@ -1128,7 +1215,7 @@ fn infer_expr_type(expr: &Expr, env: &HashMap<String, String>) -> String {
                 if method == "iter" {
                     if let Some(start) = obj_ty.find('<') {
                         if let Some(end) = obj_ty.rfind('>') {
-                            let inner = &obj_ty[start+1..end];
+                            let inner = &obj_ty[start + 1..end];
                             return format!("VecIterator<{}>", inner);
                         }
                     }
@@ -1138,7 +1225,7 @@ fn infer_expr_type(expr: &Expr, env: &HashMap<String, String>) -> String {
                 if method == "iter" {
                     if let Some(start) = obj_ty.find('<') {
                         if let Some(end) = obj_ty.rfind('>') {
-                            let inner = &obj_ty[start+1..end];
+                            let inner = &obj_ty[start + 1..end];
                             return format!("SetIterator<{}>", inner);
                         }
                     }
@@ -1148,7 +1235,7 @@ fn infer_expr_type(expr: &Expr, env: &HashMap<String, String>) -> String {
                 if method == "next" {
                     if let Some(start) = obj_ty.find('<') {
                         if let Some(end) = obj_ty.rfind('>') {
-                            let inner = &obj_ty[start+1..end];
+                            let inner = &obj_ty[start + 1..end];
                             return format!("Option<({})>", inner);
                         }
                     }
@@ -1158,7 +1245,7 @@ fn infer_expr_type(expr: &Expr, env: &HashMap<String, String>) -> String {
                 if method == "next" {
                     if let Some(start) = obj_ty.find('<') {
                         if let Some(end) = obj_ty.rfind('>') {
-                            let inner = &obj_ty[start+1..end];
+                            let inner = &obj_ty[start + 1..end];
                             return format!("Option<{}>", inner);
                         }
                     }
@@ -1188,12 +1275,7 @@ fn infer_expr_type(expr: &Expr, env: &HashMap<String, String>) -> String {
     }
 }
 
-
-
-fn get_all_monomorphized_variants(
-    actual: &str,
-    funcs: &HashMap<String, Function>,
-) -> Vec<String> {
+fn get_all_monomorphized_variants(actual: &str, funcs: &HashMap<String, Function>) -> Vec<String> {
     let mut variants = Vec::new();
     if let Some(f) = funcs.get(actual) {
         if let Some(ref parent) = f.parent_struct {
@@ -1208,10 +1290,10 @@ fn get_all_monomorphized_variants(
                     } else {
                         format!("{}::{}_", prefix_parts.join("::"), struct_base)
                     };
-                    
+
                     let method_name = actual.split("::").last().unwrap_or("");
                     let suffix = format!("::{}", method_name);
-                    
+
                     for k in funcs.keys() {
                         if k.starts_with(&prefix) && k.ends_with(&suffix) {
                             variants.push(k.clone());
@@ -1315,12 +1397,20 @@ fn collect_callees_expr(
         Expr::If(cond, then_b, else_b) => {
             collect_callees_expr(cond, sym, funcs, structs, callees);
             let (t_stmts, t_val) = &**then_b;
-            for s in t_stmts { collect_callees_stmt(s, sym, funcs, structs, callees); }
-            if let Some(v) = t_val { collect_callees_expr(v, sym, funcs, structs, callees); }
+            for s in t_stmts {
+                collect_callees_stmt(s, sym, funcs, structs, callees);
+            }
+            if let Some(v) = t_val {
+                collect_callees_expr(v, sym, funcs, structs, callees);
+            }
             if let Some(eb) = else_b {
                 let (e_stmts, e_val) = &**eb;
-                for s in e_stmts { collect_callees_stmt(s, sym, funcs, structs, callees); }
-                if let Some(v) = e_val { collect_callees_expr(v, sym, funcs, structs, callees); }
+                for s in e_stmts {
+                    collect_callees_stmt(s, sym, funcs, structs, callees);
+                }
+                if let Some(v) = e_val {
+                    collect_callees_expr(v, sym, funcs, structs, callees);
+                }
             }
         }
         Expr::Match(target, arms) => {
@@ -1348,7 +1438,9 @@ fn collect_callees_expr(
                     MatchPattern::None => ("None".to_string(), vec![]),
                     MatchPattern::Ok(v) => ("Ok".to_string(), vec![v.clone()]),
                     MatchPattern::Err(v) => ("Err".to_string(), vec![v.clone()]),
-                    MatchPattern::Variant(name, binds) => (name.rsplit("::").next().unwrap().to_string(), binds.clone()),
+                    MatchPattern::Variant(name, binds) => {
+                        (name.rsplit("::").next().unwrap().to_string(), binds.clone())
+                    }
                     MatchPattern::CatchAll => unreachable!(),
                 };
 
@@ -1356,7 +1448,12 @@ fn collect_callees_expr(
                 if let Some(s_def) = structs.get(&resolved_ty) {
                     for (j, binding_name) in bindings.iter().enumerate() {
                         let field_name = format!("{}_{}", variant_name, j);
-                        let ty = s_def.fields.iter().find(|f| f.name == field_name).map(|f| f.ty.to_string()).unwrap_or_else(|| "i32".to_string());
+                        let ty = s_def
+                            .fields
+                            .iter()
+                            .find(|f| f.name == field_name)
+                            .map(|f| f.ty.to_string())
+                            .unwrap_or_else(|| "i32".to_string());
                         let prev = sym.insert(binding_name.clone(), ty);
                         prev_types.push((binding_name.clone(), prev));
                     }
@@ -1525,12 +1622,17 @@ fn build_call_graph(
     graph
 }
 
-pub fn resolve_method_name(parent: &str, method: &str, _arg_types: &[String], funcs: &HashMap<String, Function>) -> String {
+pub fn resolve_method_name(
+    parent: &str,
+    method: &str,
+    _arg_types: &[String],
+    funcs: &HashMap<String, Function>,
+) -> String {
     let parent_base = parent.split('<').next().unwrap_or(parent);
-    
+
     // Check if the exact name exists in case it was somehow provided exactly (unlikely but safe)
     let method_name = format!("{}::{}", parent_base, method);
-    
+
     // Match based on parent_struct and method name
     let mut matches = Vec::new();
     for f in funcs.values() {
@@ -1543,17 +1645,17 @@ pub fn resolve_method_name(parent: &str, method: &str, _arg_types: &[String], fu
             }
         }
     }
-    
+
     // If there is only one match, return it
     if matches.len() == 1 {
         return matches[0].clone();
     }
-    
+
     // Fallback if not found (or ambiguous, which shouldn't happen without overloading)
     if matches.is_empty() {
         return method_name;
     }
-    
+
     matches[0].clone()
 }
 
@@ -1587,8 +1689,3 @@ pub fn split_types(s: &str) -> Vec<String> {
     }
     parts
 }
-
-
-
-
-

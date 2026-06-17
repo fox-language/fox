@@ -5,12 +5,14 @@ use std::str::FromStr;
 
 pub fn substitute_type(ty: &str, generic_name: &str, replacement: &str) -> String {
     let ty_parsed = Type::from_str(ty).unwrap_or(Type::GenericParam(ty.to_string()));
-    let rep_parsed = Type::from_str(replacement).unwrap_or(Type::GenericParam(replacement.to_string()));
+    let rep_parsed =
+        Type::from_str(replacement).unwrap_or(Type::GenericParam(replacement.to_string()));
     ty_parsed.substitute(generic_name, &rep_parsed).to_string()
 }
 
 pub fn substitute_expr(expr: &Expr, generic_name: &str, replacement: &str) -> Expr {
-    let replacement_ty = Type::from_str(replacement).unwrap_or(Type::GenericParam(replacement.to_string()));
+    let replacement_ty =
+        Type::from_str(replacement).unwrap_or(Type::GenericParam(replacement.to_string()));
     substitute_expr_typed(expr, generic_name, &replacement_ty)
 }
 
@@ -44,7 +46,12 @@ fn substitute_expr_typed(expr: &Expr, generic_name: &str, replacement: &Type) ->
                 subbed_name,
                 fields
                     .iter()
-                    .map(|(n, e)| (n.clone(), substitute_expr_typed(e, generic_name, replacement)))
+                    .map(|(n, e)| {
+                        (
+                            n.clone(),
+                            substitute_expr_typed(e, generic_name, replacement),
+                        )
+                    })
                     .collect(),
             )
         }
@@ -52,7 +59,8 @@ fn substitute_expr_typed(expr: &Expr, generic_name: &str, replacement: &Type) ->
             let subbed_name = if let Some(idx) = name.rfind("::") {
                 let struct_part = &name[..idx];
                 let method_part = &name[idx..]; // includes "::"
-                let struct_ty = Type::from_str(struct_part).unwrap_or(Type::GenericParam(struct_part.to_string()));
+                let struct_ty = Type::from_str(struct_part)
+                    .unwrap_or(Type::GenericParam(struct_part.to_string()));
                 let subbed_struct = struct_ty.substitute(generic_name, replacement).to_string();
                 format!("{}{}", subbed_struct, method_part)
             } else {
@@ -81,17 +89,27 @@ fn substitute_expr_typed(expr: &Expr, generic_name: &str, replacement: &Type) ->
             let new_else = else_b.as_ref().map(|eb| {
                 let (e_stmts, e_val) = &**eb;
                 Box::new((
-                    e_stmts.iter().map(|s| substitute_stmt_typed(s, generic_name, replacement)).collect(),
-                    e_val.as_ref().map(|v| substitute_expr_typed(v, generic_name, replacement))
+                    e_stmts
+                        .iter()
+                        .map(|s| substitute_stmt_typed(s, generic_name, replacement))
+                        .collect(),
+                    e_val
+                        .as_ref()
+                        .map(|v| substitute_expr_typed(v, generic_name, replacement)),
                 ))
             });
             Expr::If(
                 Box::new(substitute_expr_typed(cond, generic_name, replacement)),
                 Box::new((
-                    t_stmts.iter().map(|s| substitute_stmt_typed(s, generic_name, replacement)).collect(),
-                    t_val.as_ref().map(|v| substitute_expr_typed(v, generic_name, replacement))
+                    t_stmts
+                        .iter()
+                        .map(|s| substitute_stmt_typed(s, generic_name, replacement))
+                        .collect(),
+                    t_val
+                        .as_ref()
+                        .map(|v| substitute_expr_typed(v, generic_name, replacement)),
                 )),
-                new_else
+                new_else,
             )
         }
         Expr::Match(cond, arms) => Expr::Match(
@@ -99,25 +117,72 @@ fn substitute_expr_typed(expr: &Expr, generic_name: &str, replacement: &Type) ->
             arms.iter()
                 .map(|arm| MatchArm {
                     pattern: arm.pattern.clone(),
-                    body: arm.body.iter().map(|s| substitute_stmt_typed(s, generic_name, replacement)).collect(),
-                    val: arm.val.as_ref().map(|v| substitute_expr_typed(v, generic_name, replacement)),
+                    body: arm
+                        .body
+                        .iter()
+                        .map(|s| substitute_stmt_typed(s, generic_name, replacement))
+                        .collect(),
+                    val: arm
+                        .val
+                        .as_ref()
+                        .map(|v| substitute_expr_typed(v, generic_name, replacement)),
                 })
                 .collect(),
         ),
         Expr::Default => Expr::Default,
-        Expr::InvokeFuncPtr(func_expr, args) => Expr::InvokeFuncPtr(Box::new(substitute_expr_typed(func_expr, generic_name, replacement)), args.iter().map(|a| substitute_expr_typed(a, generic_name, replacement)).collect()),
+        Expr::InvokeFuncPtr(func_expr, args) => Expr::InvokeFuncPtr(
+            Box::new(substitute_expr_typed(func_expr, generic_name, replacement)),
+            args.iter()
+                .map(|a| substitute_expr_typed(a, generic_name, replacement))
+                .collect(),
+        ),
         Expr::Closure(func) => Expr::Closure(func.clone()),
-        Expr::ClosureInstantiate(f, env, captured) => Expr::ClosureInstantiate(f.clone(), env.clone(), captured.iter().map(|a| substitute_expr_typed(a, generic_name, replacement)).collect()),
-        Expr::Cast(e, t) => Expr::Cast(Box::new(substitute_expr_typed(e, generic_name, replacement)), t.substitute(generic_name, replacement)),
-        Expr::Spread(e) => Expr::Spread(Box::new(substitute_expr_typed(e, generic_name, replacement))),
-        Expr::Tuple(exprs) => Expr::Tuple(exprs.iter().map(|a| substitute_expr_typed(a, generic_name, replacement)).collect()),
-        Expr::MapLit(pairs) => Expr::MapLit(pairs.iter().map(|(k, v)| (substitute_expr_typed(k, generic_name, replacement), substitute_expr_typed(v, generic_name, replacement))).collect()),
-        Expr::VecLit(elems) => Expr::VecLit(elems.iter().map(|a| substitute_expr_typed(a, generic_name, replacement)).collect()),
+        Expr::ClosureInstantiate(f, env, captured) => Expr::ClosureInstantiate(
+            f.clone(),
+            env.clone(),
+            captured
+                .iter()
+                .map(|a| substitute_expr_typed(a, generic_name, replacement))
+                .collect(),
+        ),
+        Expr::Cast(e, t) => Expr::Cast(
+            Box::new(substitute_expr_typed(e, generic_name, replacement)),
+            t.substitute(generic_name, replacement),
+        ),
+        Expr::Spread(e) => Expr::Spread(Box::new(substitute_expr_typed(
+            e,
+            generic_name,
+            replacement,
+        ))),
+        Expr::Tuple(exprs) => Expr::Tuple(
+            exprs
+                .iter()
+                .map(|a| substitute_expr_typed(a, generic_name, replacement))
+                .collect(),
+        ),
+        Expr::MapLit(pairs) => Expr::MapLit(
+            pairs
+                .iter()
+                .map(|(k, v)| {
+                    (
+                        substitute_expr_typed(k, generic_name, replacement),
+                        substitute_expr_typed(v, generic_name, replacement),
+                    )
+                })
+                .collect(),
+        ),
+        Expr::VecLit(elems) => Expr::VecLit(
+            elems
+                .iter()
+                .map(|a| substitute_expr_typed(a, generic_name, replacement))
+                .collect(),
+        ),
     }
 }
 
 pub fn substitute_stmt(stmt: &Stmt, generic_name: &str, replacement: &str) -> Stmt {
-    let replacement_ty = Type::from_str(replacement).unwrap_or(Type::GenericParam(replacement.to_string()));
+    let replacement_ty =
+        Type::from_str(replacement).unwrap_or(Type::GenericParam(replacement.to_string()));
     substitute_stmt_typed(stmt, generic_name, &replacement_ty)
 }
 
@@ -146,7 +211,11 @@ fn substitute_stmt_typed(stmt: &Stmt, generic_name: &str, replacement: &Type) ->
             field.clone(),
             substitute_expr_typed(val, generic_name, replacement),
         ),
-        Stmt::Return(opt_expr) => Stmt::Return(opt_expr.as_ref().map(|expr| substitute_expr_typed(expr, generic_name, replacement))),
+        Stmt::Return(opt_expr) => Stmt::Return(
+            opt_expr
+                .as_ref()
+                .map(|expr| substitute_expr_typed(expr, generic_name, replacement)),
+        ),
         Stmt::AssignPlus(name, expr) => Stmt::AssignPlus(
             name.clone(),
             substitute_expr_typed(expr, generic_name, replacement),
@@ -187,8 +256,14 @@ fn substitute_stmt_typed(stmt: &Stmt, generic_name: &str, replacement: &Type) ->
                 .collect(),
         ),
         Stmt::LetTuple(bindings, expr) => {
-            let new_bindings = bindings.iter().map(|(n, t)| (n.clone(), t.substitute(generic_name, replacement))).collect();
-            Stmt::LetTuple(new_bindings, substitute_expr_typed(expr, generic_name, replacement))
+            let new_bindings = bindings
+                .iter()
+                .map(|(n, t)| (n.clone(), t.substitute(generic_name, replacement)))
+                .collect();
+            Stmt::LetTuple(
+                new_bindings,
+                substitute_expr_typed(expr, generic_name, replacement),
+            )
         }
     }
 }
@@ -210,14 +285,11 @@ pub fn generate_combinations(
     }
 }
 
-pub fn apply_multi_substitute_type(
-    ty: &Type,
-    params: &[GenericParam],
-    choices: &[String],
-) -> Type {
+pub fn apply_multi_substitute_type(ty: &Type, params: &[GenericParam], choices: &[String]) -> Type {
     let mut result = ty.clone();
     for (p, choice) in params.iter().zip(choices.iter()) {
-        let replacement_ty = Type::from_str(choice).unwrap_or(Type::GenericParam(choice.to_string()));
+        let replacement_ty =
+            Type::from_str(choice).unwrap_or(Type::GenericParam(choice.to_string()));
         result = result.substitute(&p.name, &replacement_ty);
     }
     result
@@ -255,12 +327,10 @@ pub fn remap_type(ty: &Type, map: &std::collections::HashMap<String, String>) ->
         }
         Type::Array(inner) => Type::Array(Box::new(remap_type(inner, map))),
         Type::Tuple(elems) => Type::Tuple(elems.iter().map(|el| remap_type(el, map)).collect()),
-        Type::Function(params, ret) => {
-            Type::Function(
-                params.iter().map(|p| remap_type(p, map)).collect(),
-                Box::new(remap_type(ret, map))
-            )
-        }
+        Type::Function(params, ret) => Type::Function(
+            params.iter().map(|p| remap_type(p, map)).collect(),
+            Box::new(remap_type(ret, map)),
+        ),
         _ => ty.clone(),
     }
 }
@@ -277,10 +347,9 @@ pub fn remap_expr(expr: &Expr, map: &std::collections::HashMap<String, String>) 
             method.clone(),
             args.iter().map(|a| remap_expr(a, map)).collect(),
         ),
-        Expr::FieldAccess(obj, field) => Expr::FieldAccess(
-            Box::new(remap_expr(obj, map)),
-            field.clone(),
-        ),
+        Expr::FieldAccess(obj, field) => {
+            Expr::FieldAccess(Box::new(remap_expr(obj, map)), field.clone())
+        }
         Expr::IndexAccess(arr, idx) => Expr::IndexAccess(
             Box::new(remap_expr(arr, map)),
             Box::new(remap_expr(idx, map)),
@@ -290,7 +359,10 @@ pub fn remap_expr(expr: &Expr, map: &std::collections::HashMap<String, String>) 
             let remap_name = remap_type(&name_ty, map).to_string();
             Expr::StructInit(
                 remap_name,
-                fields.iter().map(|(n, e)| (n.clone(), remap_expr(e, map))).collect(),
+                fields
+                    .iter()
+                    .map(|(n, e)| (n.clone(), remap_expr(e, map)))
+                    .collect(),
             )
         }
         Expr::New(ty, args) => Expr::New(
@@ -301,14 +373,18 @@ pub fn remap_expr(expr: &Expr, map: &std::collections::HashMap<String, String>) 
             let remap_name = if let Some(idx) = name.rfind("::") {
                 let struct_part = &name[..idx];
                 let method_part = &name[idx..]; // includes "::"
-                let struct_ty = Type::from_str(struct_part).unwrap_or(Type::GenericParam(struct_part.to_string()));
+                let struct_ty = Type::from_str(struct_part)
+                    .unwrap_or(Type::GenericParam(struct_part.to_string()));
                 let subbed_struct = remap_type(&struct_ty, map).to_string();
                 format!("{}{}", subbed_struct, method_part)
             } else {
                 let name_ty = Type::from_str(name).unwrap_or(Type::GenericParam(name.clone()));
                 remap_type(&name_ty, map).to_string()
             };
-            Expr::Call(remap_name, args.iter().map(|a| remap_expr(a, map)).collect())
+            Expr::Call(
+                remap_name,
+                args.iter().map(|a| remap_expr(a, map)).collect(),
+            )
         }
         Expr::If(cond, then_b, else_b) => {
             let (t_stmts, t_val) = &**then_b;
@@ -316,16 +392,16 @@ pub fn remap_expr(expr: &Expr, map: &std::collections::HashMap<String, String>) 
                 let (e_stmts, e_val) = &**eb;
                 Box::new((
                     e_stmts.iter().map(|s| remap_stmt(s, map)).collect(),
-                    e_val.as_ref().map(|v| remap_expr(v, map))
+                    e_val.as_ref().map(|v| remap_expr(v, map)),
                 ))
             });
             Expr::If(
                 Box::new(remap_expr(cond, map)),
                 Box::new((
                     t_stmts.iter().map(|s| remap_stmt(s, map)).collect(),
-                    t_val.as_ref().map(|v| remap_expr(v, map))
+                    t_val.as_ref().map(|v| remap_expr(v, map)),
                 )),
-                new_else
+                new_else,
             )
         }
         Expr::Match(expr, arms) => Expr::Match(
@@ -340,7 +416,12 @@ pub fn remap_expr(expr: &Expr, map: &std::collections::HashMap<String, String>) 
         ),
         Expr::Spread(e) => Expr::Spread(Box::new(remap_expr(e, map))),
         Expr::Tuple(exprs) => Expr::Tuple(exprs.iter().map(|e| remap_expr(e, map)).collect()),
-        Expr::MapLit(pairs) => Expr::MapLit(pairs.iter().map(|(k, v)| (remap_expr(k, map), remap_expr(v, map))).collect()),
+        Expr::MapLit(pairs) => Expr::MapLit(
+            pairs
+                .iter()
+                .map(|(k, v)| (remap_expr(k, map), remap_expr(v, map)))
+                .collect(),
+        ),
         Expr::VecLit(elems) => Expr::VecLit(elems.iter().map(|e| remap_expr(e, map)).collect()),
         Expr::Cast(e, t) => Expr::Cast(Box::new(remap_expr(e, map)), remap_type(t, map)),
         _ => expr.clone(),
@@ -371,7 +452,9 @@ pub fn remap_stmt(stmt: &Stmt, map: &std::collections::HashMap<String, String>) 
         Stmt::If(cond, body, else_body) => Stmt::If(
             remap_expr(cond, map),
             body.iter().map(|s| remap_stmt(s, map)).collect(),
-            else_body.as_ref().map(|e| e.iter().map(|s| remap_stmt(s, map)).collect()),
+            else_body
+                .as_ref()
+                .map(|e| e.iter().map(|s| remap_stmt(s, map)).collect()),
         ),
         Stmt::While(cond, body) => Stmt::While(
             remap_expr(cond, map),
@@ -383,20 +466,46 @@ pub fn remap_stmt(stmt: &Stmt, map: &std::collections::HashMap<String, String>) 
             body.iter().map(|s| remap_stmt(s, map)).collect(),
         ),
         Stmt::LetTuple(bindings, expr) => {
-            let new_bindings = bindings.iter().map(|(n, t)| (n.clone(), remap_type(t, map))).collect();
+            let new_bindings = bindings
+                .iter()
+                .map(|(n, t)| (n.clone(), remap_type(t, map)))
+                .collect();
             Stmt::LetTuple(new_bindings, remap_expr(expr, map))
         }
     }
 }
 
-
 pub fn substitute_identifier_in_expr(expr: &Expr, target: &str, replacement: &Expr) -> Expr {
     match expr {
-        Expr::Identifier(_) | Expr::Integer(_) | Expr::Float(_) | Expr::StringLit(_) | Expr::Bool(_) | Expr::Default => expr.clone(),
-        Expr::InvokeFuncPtr(func_expr, args) => Expr::InvokeFuncPtr(Box::new(substitute_identifier_in_expr(func_expr, target, replacement)), args.iter().map(|a| substitute_identifier_in_expr(a, target, replacement)).collect()),
+        Expr::Identifier(_)
+        | Expr::Integer(_)
+        | Expr::Float(_)
+        | Expr::StringLit(_)
+        | Expr::Bool(_)
+        | Expr::Default => expr.clone(),
+        Expr::InvokeFuncPtr(func_expr, args) => Expr::InvokeFuncPtr(
+            Box::new(substitute_identifier_in_expr(
+                func_expr,
+                target,
+                replacement,
+            )),
+            args.iter()
+                .map(|a| substitute_identifier_in_expr(a, target, replacement))
+                .collect(),
+        ),
         Expr::Closure(func) => Expr::Closure(func.clone()), // Functions capture their own closure
-        Expr::ClosureInstantiate(f, env, captured) => Expr::ClosureInstantiate(f.clone(), env.clone(), captured.iter().map(|a| substitute_identifier_in_expr(a, target, replacement)).collect()),
-        Expr::Cast(e, t) => Expr::Cast(Box::new(substitute_identifier_in_expr(e, target, replacement)), t.clone()),
+        Expr::ClosureInstantiate(f, env, captured) => Expr::ClosureInstantiate(
+            f.clone(),
+            env.clone(),
+            captured
+                .iter()
+                .map(|a| substitute_identifier_in_expr(a, target, replacement))
+                .collect(),
+        ),
+        Expr::Cast(e, t) => Expr::Cast(
+            Box::new(substitute_identifier_in_expr(e, target, replacement)),
+            t.clone(),
+        ),
         Expr::Binary(l, op, r) => Expr::Binary(
             Box::new(substitute_identifier_in_expr(l, target, replacement)),
             *op,
@@ -405,7 +514,9 @@ pub fn substitute_identifier_in_expr(expr: &Expr, target: &str, replacement: &Ex
         Expr::MethodCall(obj, m, args) => Expr::MethodCall(
             Box::new(substitute_identifier_in_expr(obj, target, replacement)),
             m.clone(),
-            args.iter().map(|a| substitute_identifier_in_expr(a, target, replacement)).collect(),
+            args.iter()
+                .map(|a| substitute_identifier_in_expr(a, target, replacement))
+                .collect(),
         ),
         Expr::FieldAccess(obj, f) => Expr::FieldAccess(
             Box::new(substitute_identifier_in_expr(obj, target, replacement)),
@@ -413,11 +524,21 @@ pub fn substitute_identifier_in_expr(expr: &Expr, target: &str, replacement: &Ex
         ),
         Expr::StructInit(n, fields) => Expr::StructInit(
             n.clone(),
-            fields.iter().map(|(fname, e)| (fname.clone(), substitute_identifier_in_expr(e, target, replacement))).collect(),
+            fields
+                .iter()
+                .map(|(fname, e)| {
+                    (
+                        fname.clone(),
+                        substitute_identifier_in_expr(e, target, replacement),
+                    )
+                })
+                .collect(),
         ),
         Expr::Call(n, args) => Expr::Call(
             n.clone(),
-            args.iter().map(|a| substitute_identifier_in_expr(a, target, replacement)).collect(),
+            args.iter()
+                .map(|a| substitute_identifier_in_expr(a, target, replacement))
+                .collect(),
         ),
         Expr::IndexAccess(arr, idx) => Expr::IndexAccess(
             Box::new(substitute_identifier_in_expr(arr, target, replacement)),
@@ -425,7 +546,9 @@ pub fn substitute_identifier_in_expr(expr: &Expr, target: &str, replacement: &Ex
         ),
         Expr::New(ty, args) => Expr::New(
             ty.clone(),
-            args.iter().map(|a| substitute_identifier_in_expr(a, target, replacement)).collect(),
+            args.iter()
+                .map(|a| substitute_identifier_in_expr(a, target, replacement))
+                .collect(),
         ),
         Expr::If(cond, then_b, else_b) => {
             let (t_stmts, t_val) = &**then_b;
@@ -433,16 +556,20 @@ pub fn substitute_identifier_in_expr(expr: &Expr, target: &str, replacement: &Ex
                 let (e_stmts, e_val) = &**eb;
                 Box::new((
                     e_stmts.clone(),
-                    e_val.as_ref().map(|v| substitute_identifier_in_expr(v, target, replacement))
+                    e_val
+                        .as_ref()
+                        .map(|v| substitute_identifier_in_expr(v, target, replacement)),
                 ))
             });
             Expr::If(
                 Box::new(substitute_identifier_in_expr(cond, target, replacement)),
                 Box::new((
                     t_stmts.clone(),
-                    t_val.as_ref().map(|v| substitute_identifier_in_expr(v, target, replacement))
+                    t_val
+                        .as_ref()
+                        .map(|v| substitute_identifier_in_expr(v, target, replacement)),
                 )),
-                new_else
+                new_else,
             )
         }
         Expr::Match(cond, arms) => Expr::Match(
@@ -450,21 +577,29 @@ pub fn substitute_identifier_in_expr(expr: &Expr, target: &str, replacement: &Ex
             arms.iter()
                 .map(|arm| {
                     let is_shadowed = match &arm.pattern {
-                        MatchPattern::Some(name) | MatchPattern::Ok(name) | MatchPattern::Err(name) => name == target,
+                        MatchPattern::Some(name)
+                        | MatchPattern::Ok(name)
+                        | MatchPattern::Err(name) => name == target,
                         MatchPattern::None => false,
-                        MatchPattern::Variant(_, bindings) => bindings.contains(&target.to_string()),
+                        MatchPattern::Variant(_, bindings) => {
+                            bindings.contains(&target.to_string())
+                        }
                         MatchPattern::CatchAll => false,
                     };
                     MatchArm {
                         pattern: arm.pattern.clone(),
-                        body: arm.body.iter().map(|s| {
-                            if is_shadowed {
-                                s.clone()
-                            } else {
-                                // Since we don't have substitute_identifier_in_stmt, we keep it as is
-                                s.clone()
-                            }
-                        }).collect(),
+                        body: arm
+                            .body
+                            .iter()
+                            .map(|s| {
+                                if is_shadowed {
+                                    s.clone()
+                                } else {
+                                    // Since we don't have substitute_identifier_in_stmt, we keep it as is
+                                    s.clone()
+                                }
+                            })
+                            .collect(),
                         val: arm.val.as_ref().map(|v| {
                             if is_shadowed {
                                 v.clone()
@@ -476,44 +611,136 @@ pub fn substitute_identifier_in_expr(expr: &Expr, target: &str, replacement: &Ex
                 })
                 .collect(),
         ),
-        Expr::Spread(e) => Expr::Spread(Box::new(substitute_identifier_in_expr(e, target, replacement))),
-        Expr::Tuple(exprs) => Expr::Tuple(exprs.iter().map(|a| substitute_identifier_in_expr(a, target, replacement)).collect()),
-        Expr::MapLit(pairs) => Expr::MapLit(pairs.iter().map(|(k, v)| (substitute_identifier_in_expr(k, target, replacement), substitute_identifier_in_expr(v, target, replacement))).collect()),
-        Expr::VecLit(elems) => Expr::VecLit(elems.iter().map(|a| substitute_identifier_in_expr(a, target, replacement)).collect()),
+        Expr::Spread(e) => Expr::Spread(Box::new(substitute_identifier_in_expr(
+            e,
+            target,
+            replacement,
+        ))),
+        Expr::Tuple(exprs) => Expr::Tuple(
+            exprs
+                .iter()
+                .map(|a| substitute_identifier_in_expr(a, target, replacement))
+                .collect(),
+        ),
+        Expr::MapLit(pairs) => Expr::MapLit(
+            pairs
+                .iter()
+                .map(|(k, v)| {
+                    (
+                        substitute_identifier_in_expr(k, target, replacement),
+                        substitute_identifier_in_expr(v, target, replacement),
+                    )
+                })
+                .collect(),
+        ),
+        Expr::VecLit(elems) => Expr::VecLit(
+            elems
+                .iter()
+                .map(|a| substitute_identifier_in_expr(a, target, replacement))
+                .collect(),
+        ),
     }
 }
 
-pub fn inline_calls_in_expr(expr: &Expr, func_map: &std::collections::HashMap<String, Function>, depth: usize) -> Expr {
-    if depth > 10 { return expr.clone(); }
+pub fn inline_calls_in_expr(
+    expr: &Expr,
+    func_map: &std::collections::HashMap<String, Function>,
+    depth: usize,
+) -> Expr {
+    if depth > 10 {
+        return expr.clone();
+    }
     match expr {
-        Expr::Identifier(_) | Expr::Integer(_) | Expr::Float(_) | Expr::StringLit(_) | Expr::Bool(_) | Expr::Default => expr.clone(),
-        Expr::InvokeFuncPtr(func_expr, args) => Expr::InvokeFuncPtr(Box::new(inline_calls_in_expr(func_expr, func_map, depth)), args.iter().map(|a| inline_calls_in_expr(a, func_map, depth)).collect()),
+        Expr::Identifier(_)
+        | Expr::Integer(_)
+        | Expr::Float(_)
+        | Expr::StringLit(_)
+        | Expr::Bool(_)
+        | Expr::Default => expr.clone(),
+        Expr::InvokeFuncPtr(func_expr, args) => Expr::InvokeFuncPtr(
+            Box::new(inline_calls_in_expr(func_expr, func_map, depth)),
+            args.iter()
+                .map(|a| inline_calls_in_expr(a, func_map, depth))
+                .collect(),
+        ),
         Expr::Closure(func) => Expr::Closure(func.clone()),
-        Expr::ClosureInstantiate(f, env, captured) => Expr::ClosureInstantiate(f.clone(), env.clone(), captured.iter().map(|a| inline_calls_in_expr(a, func_map, depth)).collect()),
-        Expr::Cast(e, t) => Expr::Cast(Box::new(inline_calls_in_expr(e, func_map, depth)), t.clone()),
-        Expr::Binary(l, op, r) => Expr::Binary(Box::new(inline_calls_in_expr(l, func_map, depth)), *op, Box::new(inline_calls_in_expr(r, func_map, depth))),
-        Expr::MethodCall(obj, m, args) => Expr::MethodCall(Box::new(inline_calls_in_expr(obj, func_map, depth)), m.clone(), args.iter().map(|a| inline_calls_in_expr(a, func_map, depth)).collect()),
-        Expr::FieldAccess(obj, f) => Expr::FieldAccess(Box::new(inline_calls_in_expr(obj, func_map, depth)), f.clone()),
-        Expr::StructInit(n, fields) => Expr::StructInit(n.clone(), fields.iter().map(|(fname, e)| (fname.clone(), inline_calls_in_expr(e, func_map, depth))).collect()),
-        Expr::Call(name, args) => Expr::Call(name.clone(), args.iter().map(|a| inline_calls_in_expr(a, func_map, depth)).collect()),
-        Expr::IndexAccess(arr, idx) => Expr::IndexAccess(Box::new(inline_calls_in_expr(arr, func_map, depth)), Box::new(inline_calls_in_expr(idx, func_map, depth))),
-        Expr::New(ty, args) => Expr::New(ty.clone(), args.iter().map(|a| inline_calls_in_expr(a, func_map, depth)).collect()),
+        Expr::ClosureInstantiate(f, env, captured) => Expr::ClosureInstantiate(
+            f.clone(),
+            env.clone(),
+            captured
+                .iter()
+                .map(|a| inline_calls_in_expr(a, func_map, depth))
+                .collect(),
+        ),
+        Expr::Cast(e, t) => Expr::Cast(
+            Box::new(inline_calls_in_expr(e, func_map, depth)),
+            t.clone(),
+        ),
+        Expr::Binary(l, op, r) => Expr::Binary(
+            Box::new(inline_calls_in_expr(l, func_map, depth)),
+            *op,
+            Box::new(inline_calls_in_expr(r, func_map, depth)),
+        ),
+        Expr::MethodCall(obj, m, args) => Expr::MethodCall(
+            Box::new(inline_calls_in_expr(obj, func_map, depth)),
+            m.clone(),
+            args.iter()
+                .map(|a| inline_calls_in_expr(a, func_map, depth))
+                .collect(),
+        ),
+        Expr::FieldAccess(obj, f) => Expr::FieldAccess(
+            Box::new(inline_calls_in_expr(obj, func_map, depth)),
+            f.clone(),
+        ),
+        Expr::StructInit(n, fields) => Expr::StructInit(
+            n.clone(),
+            fields
+                .iter()
+                .map(|(fname, e)| (fname.clone(), inline_calls_in_expr(e, func_map, depth)))
+                .collect(),
+        ),
+        Expr::Call(name, args) => Expr::Call(
+            name.clone(),
+            args.iter()
+                .map(|a| inline_calls_in_expr(a, func_map, depth))
+                .collect(),
+        ),
+        Expr::IndexAccess(arr, idx) => Expr::IndexAccess(
+            Box::new(inline_calls_in_expr(arr, func_map, depth)),
+            Box::new(inline_calls_in_expr(idx, func_map, depth)),
+        ),
+        Expr::New(ty, args) => Expr::New(
+            ty.clone(),
+            args.iter()
+                .map(|a| inline_calls_in_expr(a, func_map, depth))
+                .collect(),
+        ),
         Expr::If(cond, then_b, else_b) => {
             let (t_stmts, t_val) = &**then_b;
             let new_else = else_b.as_ref().map(|eb| {
                 let (e_stmts, e_val) = &**eb;
                 Box::new((
-                    e_stmts.iter().map(|s| inline_calls_in_stmt(s, func_map)).collect(),
-                    e_val.as_ref().map(|v| inline_calls_in_expr(v, func_map, depth))
+                    e_stmts
+                        .iter()
+                        .map(|s| inline_calls_in_stmt(s, func_map))
+                        .collect(),
+                    e_val
+                        .as_ref()
+                        .map(|v| inline_calls_in_expr(v, func_map, depth)),
                 ))
             });
             Expr::If(
                 Box::new(inline_calls_in_expr(cond, func_map, depth)),
                 Box::new((
-                    t_stmts.iter().map(|s| inline_calls_in_stmt(s, func_map)).collect(),
-                    t_val.as_ref().map(|v| inline_calls_in_expr(v, func_map, depth))
+                    t_stmts
+                        .iter()
+                        .map(|s| inline_calls_in_stmt(s, func_map))
+                        .collect(),
+                    t_val
+                        .as_ref()
+                        .map(|v| inline_calls_in_expr(v, func_map, depth)),
                 )),
-                new_else
+                new_else,
             )
         }
         Expr::Match(cond, arms) => Expr::Match(
@@ -521,21 +748,55 @@ pub fn inline_calls_in_expr(expr: &Expr, func_map: &std::collections::HashMap<St
             arms.iter()
                 .map(|arm| MatchArm {
                     pattern: arm.pattern.clone(),
-                    body: arm.body.iter().map(|s| inline_calls_in_stmt(s, func_map)).collect(),
-                    val: arm.val.as_ref().map(|v| inline_calls_in_expr(v, func_map, depth)),
+                    body: arm
+                        .body
+                        .iter()
+                        .map(|s| inline_calls_in_stmt(s, func_map))
+                        .collect(),
+                    val: arm
+                        .val
+                        .as_ref()
+                        .map(|v| inline_calls_in_expr(v, func_map, depth)),
                 })
                 .collect(),
         ),
         Expr::Spread(e) => Expr::Spread(Box::new(inline_calls_in_expr(e, func_map, depth))),
-        Expr::Tuple(exprs) => Expr::Tuple(exprs.iter().map(|a| inline_calls_in_expr(a, func_map, depth)).collect()),
-        Expr::MapLit(pairs) => Expr::MapLit(pairs.iter().map(|(k, v)| (inline_calls_in_expr(k, func_map, depth), inline_calls_in_expr(v, func_map, depth))).collect()),
-        Expr::VecLit(elems) => Expr::VecLit(elems.iter().map(|a| inline_calls_in_expr(a, func_map, depth)).collect()),
+        Expr::Tuple(exprs) => Expr::Tuple(
+            exprs
+                .iter()
+                .map(|a| inline_calls_in_expr(a, func_map, depth))
+                .collect(),
+        ),
+        Expr::MapLit(pairs) => Expr::MapLit(
+            pairs
+                .iter()
+                .map(|(k, v)| {
+                    (
+                        inline_calls_in_expr(k, func_map, depth),
+                        inline_calls_in_expr(v, func_map, depth),
+                    )
+                })
+                .collect(),
+        ),
+        Expr::VecLit(elems) => Expr::VecLit(
+            elems
+                .iter()
+                .map(|a| inline_calls_in_expr(a, func_map, depth))
+                .collect(),
+        ),
     }
 }
 
-pub fn inline_calls_in_stmt(stmt: &Stmt, func_map: &std::collections::HashMap<String, Function>) -> Stmt {
+pub fn inline_calls_in_stmt(
+    stmt: &Stmt,
+    func_map: &std::collections::HashMap<String, Function>,
+) -> Stmt {
     match stmt {
-        Stmt::Let(name, ty, expr) => Stmt::Let(name.clone(), ty.clone(), inline_calls_in_expr(expr, func_map, 0)),
+        Stmt::Let(name, ty, expr) => Stmt::Let(
+            name.clone(),
+            ty.clone(),
+            inline_calls_in_expr(expr, func_map, 0),
+        ),
         Stmt::ExprStmt(expr) => Stmt::ExprStmt(inline_calls_in_expr(expr, func_map, 0)),
         Stmt::AssignIndex(arr, idx, val) => Stmt::AssignIndex(
             Box::new(inline_calls_in_expr(arr, func_map, 0)),
@@ -547,27 +808,44 @@ pub fn inline_calls_in_stmt(stmt: &Stmt, func_map: &std::collections::HashMap<St
             field.clone(),
             inline_calls_in_expr(val, func_map, 0),
         ),
-        Stmt::Return(opt_expr) => Stmt::Return(opt_expr.as_ref().map(|expr| inline_calls_in_expr(expr, func_map, 0))),
-        Stmt::AssignPlus(name, expr) => Stmt::AssignPlus(name.clone(), inline_calls_in_expr(expr, func_map, 0)),
-        Stmt::Assign(name, expr) => Stmt::Assign(name.clone(), inline_calls_in_expr(expr, func_map, 0)),
+        Stmt::Return(opt_expr) => Stmt::Return(
+            opt_expr
+                .as_ref()
+                .map(|expr| inline_calls_in_expr(expr, func_map, 0)),
+        ),
+        Stmt::AssignPlus(name, expr) => {
+            Stmt::AssignPlus(name.clone(), inline_calls_in_expr(expr, func_map, 0))
+        }
+        Stmt::Assign(name, expr) => {
+            Stmt::Assign(name.clone(), inline_calls_in_expr(expr, func_map, 0))
+        }
         Stmt::If(cond, body, else_body) => Stmt::If(
             inline_calls_in_expr(cond, func_map, 0),
-            body.iter().map(|s| inline_calls_in_stmt(s, func_map)).collect(),
-            else_body.as_ref().map(|e| e.iter().map(|s| inline_calls_in_stmt(s, func_map)).collect()),
+            body.iter()
+                .map(|s| inline_calls_in_stmt(s, func_map))
+                .collect(),
+            else_body.as_ref().map(|e| {
+                e.iter()
+                    .map(|s| inline_calls_in_stmt(s, func_map))
+                    .collect()
+            }),
         ),
         Stmt::While(cond, body) => Stmt::While(
             inline_calls_in_expr(cond, func_map, 0),
-            body.iter().map(|s| inline_calls_in_stmt(s, func_map)).collect(),
+            body.iter()
+                .map(|s| inline_calls_in_stmt(s, func_map))
+                .collect(),
         ),
         Stmt::For(loop_var, target, body) => Stmt::For(
             loop_var.clone(),
             target.clone(),
-            body.iter().map(|s| inline_calls_in_stmt(s, func_map)).collect(),
+            body.iter()
+                .map(|s| inline_calls_in_stmt(s, func_map))
+                .collect(),
         ),
-        Stmt::LetTuple(bindings, expr) => Stmt::LetTuple(
-            bindings.clone(),
-            inline_calls_in_expr(expr, func_map, 0),
-        ),
+        Stmt::LetTuple(bindings, expr) => {
+            Stmt::LetTuple(bindings.clone(), inline_calls_in_expr(expr, func_map, 0))
+        }
     }
 }
 
@@ -576,19 +854,29 @@ pub fn get_modified_vars_expr(expr: &Expr, vars: &mut std::collections::HashSet<
         Expr::If(cond, then_b, else_b) => {
             get_modified_vars_expr(cond, vars);
             let (t_stmts, t_val) = &**then_b;
-            for s in t_stmts { get_modified_vars(s, vars); }
-            if let Some(v) = t_val { get_modified_vars_expr(v, vars); }
+            for s in t_stmts {
+                get_modified_vars(s, vars);
+            }
+            if let Some(v) = t_val {
+                get_modified_vars_expr(v, vars);
+            }
             if let Some(eb) = else_b {
                 let (e_stmts, e_val) = &**eb;
-                for s in e_stmts { get_modified_vars(s, vars); }
-                if let Some(v) = e_val { get_modified_vars_expr(v, vars); }
+                for s in e_stmts {
+                    get_modified_vars(s, vars);
+                }
+                if let Some(v) = e_val {
+                    get_modified_vars_expr(v, vars);
+                }
             }
         }
         Expr::Match(cond, arms) => {
             get_modified_vars_expr(cond, vars);
             for arm in arms {
                 match &arm.pattern {
-                    MatchPattern::Some(var_name) | MatchPattern::Ok(var_name) | MatchPattern::Err(var_name) => {
+                    MatchPattern::Some(var_name)
+                    | MatchPattern::Ok(var_name)
+                    | MatchPattern::Err(var_name) => {
                         vars.insert(var_name.clone());
                     }
                     MatchPattern::Variant(_, bindings) => {
@@ -612,27 +900,37 @@ pub fn get_modified_vars_expr(expr: &Expr, vars: &mut std::collections::HashSet<
         }
         Expr::MethodCall(obj, _, args) => {
             get_modified_vars_expr(obj, vars);
-            for a in args { get_modified_vars_expr(a, vars); }
+            for a in args {
+                get_modified_vars_expr(a, vars);
+            }
         }
         Expr::FieldAccess(obj, _) => {
             get_modified_vars_expr(obj, vars);
         }
         Expr::StructInit(_, fields) => {
-            for (_, e) in fields { get_modified_vars_expr(e, vars); }
+            for (_, e) in fields {
+                get_modified_vars_expr(e, vars);
+            }
         }
         Expr::Call(_, args) => {
-            for a in args { get_modified_vars_expr(a, vars); }
+            for a in args {
+                get_modified_vars_expr(a, vars);
+            }
         }
         Expr::IndexAccess(arr, idx) => {
             get_modified_vars_expr(arr, vars);
             get_modified_vars_expr(idx, vars);
         }
         Expr::New(_, args) => {
-            for a in args { get_modified_vars_expr(a, vars); }
+            for a in args {
+                get_modified_vars_expr(a, vars);
+            }
         }
         Expr::Spread(e) => get_modified_vars_expr(e, vars),
         Expr::Tuple(exprs) => {
-            for e in exprs { get_modified_vars_expr(e, vars); }
+            for e in exprs {
+                get_modified_vars_expr(e, vars);
+            }
         }
         Expr::MapLit(pairs) => {
             for (k, v) in pairs {
@@ -691,18 +989,26 @@ pub fn get_modified_vars(stmt: &Stmt, vars: &mut std::collections::HashSet<Strin
         }
         Stmt::If(cond, body, else_body) => {
             get_modified_vars_expr(cond, vars);
-            for s in body { get_modified_vars(s, vars); }
+            for s in body {
+                get_modified_vars(s, vars);
+            }
             if let Some(e) = else_body {
-                for s in e { get_modified_vars(s, vars); }
+                for s in e {
+                    get_modified_vars(s, vars);
+                }
             }
         }
         Stmt::While(cond, body) => {
             get_modified_vars_expr(cond, vars);
-            for s in body { get_modified_vars(s, vars); }
+            for s in body {
+                get_modified_vars(s, vars);
+            }
         }
         Stmt::For(loop_var, _, body) => {
             vars.insert(loop_var.clone());
-            for s in body { get_modified_vars(s, vars); }
+            for s in body {
+                get_modified_vars(s, vars);
+            }
         }
     }
 }
@@ -710,38 +1016,52 @@ pub fn get_modified_vars(stmt: &Stmt, vars: &mut std::collections::HashSet<Strin
 pub fn get_read_vars(expr: &Expr, vars: &mut std::collections::HashSet<String>) {
     match expr {
         Expr::Integer(_) | Expr::Float(_) | Expr::StringLit(_) | Expr::Bool(_) => {}
-        Expr::Identifier(n) => { vars.insert(n.clone()); }
+        Expr::Identifier(n) => {
+            vars.insert(n.clone());
+        }
         Expr::Binary(l, _, r) => {
             get_read_vars(l, vars);
             get_read_vars(r, vars);
         }
         Expr::MethodCall(obj, _, args) => {
             get_read_vars(obj, vars);
-            for a in args { get_read_vars(a, vars); }
+            for a in args {
+                get_read_vars(a, vars);
+            }
         }
         Expr::FieldAccess(obj, _) => {
             get_read_vars(obj, vars);
         }
         Expr::StructInit(_, fields) => {
-            for (_, e) in fields { get_read_vars(e, vars); }
+            for (_, e) in fields {
+                get_read_vars(e, vars);
+            }
         }
         Expr::Call(_, args) => {
-            for a in args { get_read_vars(a, vars); }
+            for a in args {
+                get_read_vars(a, vars);
+            }
         }
         Expr::IndexAccess(arr, idx) => {
             get_read_vars(arr, vars);
             get_read_vars(idx, vars);
         }
         Expr::New(_, args) => {
-            for a in args { get_read_vars(a, vars); }
+            for a in args {
+                get_read_vars(a, vars);
+            }
         }
         Expr::If(cond, then_b, else_b) => {
             get_read_vars(cond, vars);
             let (_, t_val) = &**then_b;
-            if let Some(v) = t_val { get_read_vars(v, vars); }
+            if let Some(v) = t_val {
+                get_read_vars(v, vars);
+            }
             if let Some(eb) = else_b {
                 let (_, e_val) = &**eb;
-                if let Some(v) = e_val { get_read_vars(v, vars); }
+                if let Some(v) = e_val {
+                    get_read_vars(v, vars);
+                }
             }
         }
         Expr::Match(cond, arms) => {
@@ -751,7 +1071,9 @@ pub fn get_read_vars(expr: &Expr, vars: &mut std::collections::HashSet<String>) 
                     let mut val_vars = std::collections::HashSet::new();
                     get_read_vars(v, &mut val_vars);
                     match &arm.pattern {
-                        MatchPattern::Some(name) | MatchPattern::Ok(name) | MatchPattern::Err(name) => {
+                        MatchPattern::Some(name)
+                        | MatchPattern::Ok(name)
+                        | MatchPattern::Err(name) => {
                             val_vars.remove(name);
                         }
                         MatchPattern::Variant(_, bindings) => {
@@ -768,16 +1090,22 @@ pub fn get_read_vars(expr: &Expr, vars: &mut std::collections::HashSet<String>) 
         Expr::Default => {}
         Expr::InvokeFuncPtr(func_expr, args) => {
             get_read_vars(func_expr, vars);
-            for a in args { get_read_vars(a, vars); }
+            for a in args {
+                get_read_vars(a, vars);
+            }
         }
         Expr::Closure(_) => {}
         Expr::ClosureInstantiate(_, _, captured) => {
-            for a in captured { get_read_vars(a, vars); }
+            for a in captured {
+                get_read_vars(a, vars);
+            }
         }
         Expr::Cast(e, _) => get_read_vars(e, vars),
         Expr::Spread(e) => get_read_vars(e, vars),
         Expr::Tuple(exprs) => {
-            for e in exprs { get_read_vars(e, vars); }
+            for e in exprs {
+                get_read_vars(e, vars);
+            }
         }
         Expr::MapLit(pairs) => {
             for (k, v) in pairs {
@@ -795,41 +1123,40 @@ pub fn get_read_vars(expr: &Expr, vars: &mut std::collections::HashSet<String>) 
 
 pub fn pass_loop_unswitch_stmt(stmt: &Stmt) -> Stmt {
     match stmt {
-        Stmt::If(cond, body, else_body) => {
-            Stmt::If(
-                cond.clone(),
-                pass_loop_unswitch_block(body),
-                else_body.as_ref().map(|e| pass_loop_unswitch_block(e)),
-            )
-        }
+        Stmt::If(cond, body, else_body) => Stmt::If(
+            cond.clone(),
+            pass_loop_unswitch_block(body),
+            else_body.as_ref().map(|e| pass_loop_unswitch_block(e)),
+        ),
         Stmt::While(cond, body) => {
             let mut modified_vars = std::collections::HashSet::new();
             for s in body {
                 get_modified_vars(s, &mut modified_vars);
             }
-            
+
             let mut unswitched_if = None;
-            
+
             for (i, s) in body.iter().enumerate() {
                 if let Stmt::If(if_cond, if_body, else_body) = s {
                     let mut read_vars = std::collections::HashSet::new();
                     get_read_vars(if_cond, &mut read_vars);
-                    
+
                     let is_invariant = read_vars.intersection(&modified_vars).count() == 0;
                     if is_invariant {
-                        unswitched_if = Some((i, if_cond.clone(), if_body.clone(), else_body.clone()));
+                        unswitched_if =
+                            Some((i, if_cond.clone(), if_body.clone(), else_body.clone()));
                         break;
                     }
                 }
             }
-            
+
             if let Some((idx, if_cond, if_body, else_body)) = unswitched_if {
                 let mut true_body = body.clone();
                 true_body.remove(idx);
                 for (j, insert_s) in if_body.iter().enumerate() {
                     true_body.insert(idx + j, insert_s.clone());
                 }
-                
+
                 let mut false_body = body.clone();
                 false_body.remove(idx);
                 if let Some(e_body) = else_body {
@@ -837,24 +1164,28 @@ pub fn pass_loop_unswitch_stmt(stmt: &Stmt) -> Stmt {
                         false_body.insert(idx + j, insert_s.clone());
                     }
                 }
-                
+
                 return Stmt::If(
                     if_cond,
-                    vec![Stmt::While(cond.clone(), pass_loop_unswitch_block(&true_body))],
-                    Some(vec![Stmt::While(cond.clone(), pass_loop_unswitch_block(&false_body))])
+                    vec![Stmt::While(
+                        cond.clone(),
+                        pass_loop_unswitch_block(&true_body),
+                    )],
+                    Some(vec![Stmt::While(
+                        cond.clone(),
+                        pass_loop_unswitch_block(&false_body),
+                    )]),
                 );
             }
-            
+
             Stmt::While(cond.clone(), pass_loop_unswitch_block(body))
         }
-        Stmt::For(loop_var, target, body) => {
-            Stmt::For(
-                loop_var.clone(),
-                target.clone(),
-                pass_loop_unswitch_block(body),
-            )
-        }
-        _ => stmt.clone()
+        Stmt::For(loop_var, target, body) => Stmt::For(
+            loop_var.clone(),
+            target.clone(),
+            pass_loop_unswitch_block(body),
+        ),
+        _ => stmt.clone(),
     }
 }
 
@@ -873,10 +1204,18 @@ pub fn optimize_expr(expr: &Expr) -> Expr {
                         Op::Add => return Expr::Integer((l_num.wrapping_add(r_num)).to_string()),
                         Op::Sub => return Expr::Integer((l_num.wrapping_sub(r_num)).to_string()),
                         Op::Mul => return Expr::Integer((l_num.wrapping_mul(r_num)).to_string()),
-                        Op::Div => if r_num != 0 { return Expr::Integer((l_num.wrapping_div(r_num)).to_string()); },
+                        Op::Div => {
+                            if r_num != 0 {
+                                return Expr::Integer((l_num.wrapping_div(r_num)).to_string());
+                            }
+                        }
                         Op::BitAnd => return Expr::Integer((l_num & r_num).to_string()),
                         Op::BitXor => return Expr::Integer((l_num ^ r_num).to_string()),
-                        Op::Rem => if r_num != 0 { return Expr::Integer((l_num.wrapping_rem(r_num)).to_string()); },
+                        Op::Rem => {
+                            if r_num != 0 {
+                                return Expr::Integer((l_num.wrapping_rem(r_num)).to_string());
+                            }
+                        }
                         Op::ShiftLeft => return Expr::Integer((l_num << r_num).to_string()),
                         Op::ShiftRight => return Expr::Integer((l_num >> r_num).to_string()),
                         _ => {}
@@ -899,42 +1238,39 @@ pub fn optimize_expr(expr: &Expr) -> Expr {
             method.clone(),
             args.iter().map(optimize_expr).collect(),
         ),
-        Expr::FieldAccess(obj, field) => Expr::FieldAccess(
-            Box::new(optimize_expr(obj)),
-            field.clone(),
-        ),
+        Expr::FieldAccess(obj, field) => {
+            Expr::FieldAccess(Box::new(optimize_expr(obj)), field.clone())
+        }
         Expr::StructInit(name, fields) => Expr::StructInit(
             name.clone(),
-            fields.iter().map(|(n, e)| (n.clone(), optimize_expr(e))).collect(),
+            fields
+                .iter()
+                .map(|(n, e)| (n.clone(), optimize_expr(e)))
+                .collect(),
         ),
-        Expr::Call(name, args) => Expr::Call(
-            name.clone(),
-            args.iter().map(optimize_expr).collect(),
-        ),
-        Expr::IndexAccess(arr, idx) => Expr::IndexAccess(
-            Box::new(optimize_expr(arr)),
-            Box::new(optimize_expr(idx)),
-        ),
-        Expr::New(ty, args) => Expr::New(
-            ty.clone(),
-            args.iter().map(optimize_expr).collect(),
-        ),
+        Expr::Call(name, args) => {
+            Expr::Call(name.clone(), args.iter().map(optimize_expr).collect())
+        }
+        Expr::IndexAccess(arr, idx) => {
+            Expr::IndexAccess(Box::new(optimize_expr(arr)), Box::new(optimize_expr(idx)))
+        }
+        Expr::New(ty, args) => Expr::New(ty.clone(), args.iter().map(optimize_expr).collect()),
         Expr::If(cond, then_b, else_b) => {
             let (t_stmts, t_val) = &**then_b;
             let new_else = else_b.as_ref().map(|eb| {
                 let (e_stmts, e_val) = &**eb;
                 Box::new((
                     optimize_block(e_stmts),
-                    e_val.as_ref().map(|v| optimize_expr(v))
+                    e_val.as_ref().map(|v| optimize_expr(v)),
                 ))
             });
             Expr::If(
                 Box::new(optimize_expr(cond)),
                 Box::new((
                     optimize_block(t_stmts),
-                    t_val.as_ref().map(|v| optimize_expr(v))
+                    t_val.as_ref().map(|v| optimize_expr(v)),
                 )),
-                new_else
+                new_else,
             )
         }
         Expr::Match(cond, arms) => Expr::Match(
@@ -949,7 +1285,12 @@ pub fn optimize_expr(expr: &Expr) -> Expr {
         ),
         Expr::Spread(e) => Expr::Spread(Box::new(optimize_expr(e))),
         Expr::Tuple(exprs) => Expr::Tuple(exprs.iter().map(optimize_expr).collect()),
-        Expr::MapLit(pairs) => Expr::MapLit(pairs.iter().map(|(k, v)| (optimize_expr(k), optimize_expr(v))).collect()),
+        Expr::MapLit(pairs) => Expr::MapLit(
+            pairs
+                .iter()
+                .map(|(k, v)| (optimize_expr(k), optimize_expr(v)))
+                .collect(),
+        ),
         Expr::VecLit(elems) => Expr::VecLit(elems.iter().map(optimize_expr).collect()),
         _ => expr.clone(),
     }
@@ -1137,7 +1478,11 @@ fn find_mutated_vars_expr(expr: &Expr, mutated: &mut std::collections::HashSet<S
     }
 }
 
-pub fn hoist_array_len_expr(expr: &Expr, hoisted: &mut std::collections::HashSet<String>, mutated_vars: &std::collections::HashSet<String>) -> Expr {
+pub fn hoist_array_len_expr(
+    expr: &Expr,
+    hoisted: &mut std::collections::HashSet<String>,
+    mutated_vars: &std::collections::HashSet<String>,
+) -> Expr {
     match expr {
         Expr::MethodCall(obj, method, args) if method == "len" && args.is_empty() => {
             if let Expr::Identifier(arr_name) = &**obj {
@@ -1146,7 +1491,11 @@ pub fn hoist_array_len_expr(expr: &Expr, hoisted: &mut std::collections::HashSet
                     return Expr::Identifier(format!("_hoist_{}_len", arr_name));
                 }
             }
-            Expr::MethodCall(Box::new(hoist_array_len_expr(obj, hoisted, mutated_vars)), method.clone(), args.clone())
+            Expr::MethodCall(
+                Box::new(hoist_array_len_expr(obj, hoisted, mutated_vars)),
+                method.clone(),
+                args.clone(),
+            )
         }
         Expr::Binary(l, op, r) => Expr::Binary(
             Box::new(hoist_array_len_expr(l, hoisted, mutated_vars)),
@@ -1156,7 +1505,9 @@ pub fn hoist_array_len_expr(expr: &Expr, hoisted: &mut std::collections::HashSet
         Expr::MethodCall(obj, method, args) => Expr::MethodCall(
             Box::new(hoist_array_len_expr(obj, hoisted, mutated_vars)),
             method.clone(),
-            args.iter().map(|a| hoist_array_len_expr(a, hoisted, mutated_vars)).collect(),
+            args.iter()
+                .map(|a| hoist_array_len_expr(a, hoisted, mutated_vars))
+                .collect(),
         ),
         Expr::FieldAccess(obj, field) => Expr::FieldAccess(
             Box::new(hoist_array_len_expr(obj, hoisted, mutated_vars)),
@@ -1164,11 +1515,16 @@ pub fn hoist_array_len_expr(expr: &Expr, hoisted: &mut std::collections::HashSet
         ),
         Expr::StructInit(name, fields) => Expr::StructInit(
             name.clone(),
-            fields.iter().map(|(n, e)| (n.clone(), hoist_array_len_expr(e, hoisted, mutated_vars))).collect(),
+            fields
+                .iter()
+                .map(|(n, e)| (n.clone(), hoist_array_len_expr(e, hoisted, mutated_vars)))
+                .collect(),
         ),
         Expr::Call(name, args) => Expr::Call(
             name.clone(),
-            args.iter().map(|a| hoist_array_len_expr(a, hoisted, mutated_vars)).collect(),
+            args.iter()
+                .map(|a| hoist_array_len_expr(a, hoisted, mutated_vars))
+                .collect(),
         ),
         Expr::IndexAccess(arr, idx) => Expr::IndexAccess(
             Box::new(hoist_array_len_expr(arr, hoisted, mutated_vars)),
@@ -1176,24 +1532,36 @@ pub fn hoist_array_len_expr(expr: &Expr, hoisted: &mut std::collections::HashSet
         ),
         Expr::New(ty, args) => Expr::New(
             ty.clone(),
-            args.iter().map(|a| hoist_array_len_expr(a, hoisted, mutated_vars)).collect(),
+            args.iter()
+                .map(|a| hoist_array_len_expr(a, hoisted, mutated_vars))
+                .collect(),
         ),
         Expr::If(cond, then_b, else_b) => {
             let (t_stmts, t_val) = &**then_b;
             let new_else = else_b.as_ref().map(|eb| {
                 let (e_stmts, e_val) = &**eb;
                 Box::new((
-                    e_stmts.iter().map(|s| hoist_array_len_stmt(s, hoisted, mutated_vars)).collect(),
-                    e_val.as_ref().map(|v| hoist_array_len_expr(v, hoisted, mutated_vars))
+                    e_stmts
+                        .iter()
+                        .map(|s| hoist_array_len_stmt(s, hoisted, mutated_vars))
+                        .collect(),
+                    e_val
+                        .as_ref()
+                        .map(|v| hoist_array_len_expr(v, hoisted, mutated_vars)),
                 ))
             });
             Expr::If(
                 Box::new(hoist_array_len_expr(cond, hoisted, mutated_vars)),
                 Box::new((
-                    t_stmts.iter().map(|s| hoist_array_len_stmt(s, hoisted, mutated_vars)).collect(),
-                    t_val.as_ref().map(|v| hoist_array_len_expr(v, hoisted, mutated_vars))
+                    t_stmts
+                        .iter()
+                        .map(|s| hoist_array_len_stmt(s, hoisted, mutated_vars))
+                        .collect(),
+                    t_val
+                        .as_ref()
+                        .map(|v| hoist_array_len_expr(v, hoisted, mutated_vars)),
                 )),
-                new_else
+                new_else,
             )
         }
         Expr::Match(cond, arms) => Expr::Match(
@@ -1201,22 +1569,57 @@ pub fn hoist_array_len_expr(expr: &Expr, hoisted: &mut std::collections::HashSet
             arms.iter()
                 .map(|arm| MatchArm {
                     pattern: arm.pattern.clone(),
-                    body: arm.body.iter().map(|s| hoist_array_len_stmt(s, hoisted, mutated_vars)).collect(),
-                    val: arm.val.as_ref().map(|v| hoist_array_len_expr(v, hoisted, mutated_vars)),
+                    body: arm
+                        .body
+                        .iter()
+                        .map(|s| hoist_array_len_stmt(s, hoisted, mutated_vars))
+                        .collect(),
+                    val: arm
+                        .val
+                        .as_ref()
+                        .map(|v| hoist_array_len_expr(v, hoisted, mutated_vars)),
                 })
                 .collect(),
         ),
         Expr::Spread(e) => Expr::Spread(Box::new(hoist_array_len_expr(e, hoisted, mutated_vars))),
-        Expr::Tuple(exprs) => Expr::Tuple(exprs.iter().map(|a| hoist_array_len_expr(a, hoisted, mutated_vars)).collect()),
-        Expr::MapLit(pairs) => Expr::MapLit(pairs.iter().map(|(k, v)| (hoist_array_len_expr(k, hoisted, mutated_vars), hoist_array_len_expr(v, hoisted, mutated_vars))).collect()),
-        Expr::VecLit(elems) => Expr::VecLit(elems.iter().map(|a| hoist_array_len_expr(a, hoisted, mutated_vars)).collect()),
+        Expr::Tuple(exprs) => Expr::Tuple(
+            exprs
+                .iter()
+                .map(|a| hoist_array_len_expr(a, hoisted, mutated_vars))
+                .collect(),
+        ),
+        Expr::MapLit(pairs) => Expr::MapLit(
+            pairs
+                .iter()
+                .map(|(k, v)| {
+                    (
+                        hoist_array_len_expr(k, hoisted, mutated_vars),
+                        hoist_array_len_expr(v, hoisted, mutated_vars),
+                    )
+                })
+                .collect(),
+        ),
+        Expr::VecLit(elems) => Expr::VecLit(
+            elems
+                .iter()
+                .map(|a| hoist_array_len_expr(a, hoisted, mutated_vars))
+                .collect(),
+        ),
         _ => expr.clone(),
     }
 }
 
-pub fn hoist_array_len_stmt(stmt: &Stmt, hoisted: &mut std::collections::HashSet<String>, mutated_vars: &std::collections::HashSet<String>) -> Stmt {
+pub fn hoist_array_len_stmt(
+    stmt: &Stmt,
+    hoisted: &mut std::collections::HashSet<String>,
+    mutated_vars: &std::collections::HashSet<String>,
+) -> Stmt {
     match stmt {
-        Stmt::Let(name, ty, expr) => Stmt::Let(name.clone(), ty.clone(), hoist_array_len_expr(expr, hoisted, mutated_vars)),
+        Stmt::Let(name, ty, expr) => Stmt::Let(
+            name.clone(),
+            ty.clone(),
+            hoist_array_len_expr(expr, hoisted, mutated_vars),
+        ),
         Stmt::ExprStmt(expr) => Stmt::ExprStmt(hoist_array_len_expr(expr, hoisted, mutated_vars)),
         Stmt::AssignIndex(arr, idx, val) => Stmt::AssignIndex(
             Box::new(hoist_array_len_expr(arr, hoisted, mutated_vars)),
@@ -1228,24 +1631,47 @@ pub fn hoist_array_len_stmt(stmt: &Stmt, hoisted: &mut std::collections::HashSet
             field.clone(),
             hoist_array_len_expr(val, hoisted, mutated_vars),
         ),
-        Stmt::Return(opt_expr) => Stmt::Return(opt_expr.as_ref().map(|expr| hoist_array_len_expr(expr, hoisted, mutated_vars))),
-        Stmt::AssignPlus(name, expr) => Stmt::AssignPlus(name.clone(), hoist_array_len_expr(expr, hoisted, mutated_vars)),
-        Stmt::Assign(name, expr) => Stmt::Assign(name.clone(), hoist_array_len_expr(expr, hoisted, mutated_vars)),
+        Stmt::Return(opt_expr) => Stmt::Return(
+            opt_expr
+                .as_ref()
+                .map(|expr| hoist_array_len_expr(expr, hoisted, mutated_vars)),
+        ),
+        Stmt::AssignPlus(name, expr) => Stmt::AssignPlus(
+            name.clone(),
+            hoist_array_len_expr(expr, hoisted, mutated_vars),
+        ),
+        Stmt::Assign(name, expr) => Stmt::Assign(
+            name.clone(),
+            hoist_array_len_expr(expr, hoisted, mutated_vars),
+        ),
         Stmt::If(cond, body, else_body) => Stmt::If(
             hoist_array_len_expr(cond, hoisted, mutated_vars),
-            body.iter().map(|s| hoist_array_len_stmt(s, hoisted, mutated_vars)).collect(),
-            else_body.as_ref().map(|e| e.iter().map(|s| hoist_array_len_stmt(s, hoisted, mutated_vars)).collect()),
+            body.iter()
+                .map(|s| hoist_array_len_stmt(s, hoisted, mutated_vars))
+                .collect(),
+            else_body.as_ref().map(|e| {
+                e.iter()
+                    .map(|s| hoist_array_len_stmt(s, hoisted, mutated_vars))
+                    .collect()
+            }),
         ),
         Stmt::While(cond, body) => Stmt::While(
             hoist_array_len_expr(cond, hoisted, mutated_vars),
-            body.iter().map(|s| hoist_array_len_stmt(s, hoisted, mutated_vars)).collect(),
+            body.iter()
+                .map(|s| hoist_array_len_stmt(s, hoisted, mutated_vars))
+                .collect(),
         ),
         Stmt::For(loop_var, target, body) => Stmt::For(
             loop_var.clone(),
             target.clone(),
-            body.iter().map(|s| hoist_array_len_stmt(s, hoisted, mutated_vars)).collect(),
+            body.iter()
+                .map(|s| hoist_array_len_stmt(s, hoisted, mutated_vars))
+                .collect(),
         ),
-        Stmt::LetTuple(bindings, expr) => Stmt::LetTuple(bindings.clone(), hoist_array_len_expr(expr, hoisted, mutated_vars)),
+        Stmt::LetTuple(bindings, expr) => Stmt::LetTuple(
+            bindings.clone(),
+            hoist_array_len_expr(expr, hoisted, mutated_vars),
+        ),
     }
 }
 
@@ -1271,15 +1697,10 @@ pub fn optimize_stmt(stmt: &Stmt) -> Stmt {
             optimize_block(body),
             else_body.as_ref().map(|e| optimize_block(e)),
         ),
-        Stmt::While(cond, body) => Stmt::While(
-            optimize_expr(cond),
-            optimize_block(body),
-        ),
-        Stmt::For(loop_var, target, body) => Stmt::For(
-            loop_var.clone(),
-            target.clone(),
-            optimize_block(body),
-        ),
+        Stmt::While(cond, body) => Stmt::While(optimize_expr(cond), optimize_block(body)),
+        Stmt::For(loop_var, target, body) => {
+            Stmt::For(loop_var.clone(), target.clone(), optimize_block(body))
+        }
         Stmt::LetTuple(bindings, expr) => Stmt::LetTuple(bindings.clone(), optimize_expr(expr)),
     }
 }
@@ -1288,9 +1709,9 @@ pub fn optimize_block(stmts: &[Stmt]) -> Vec<Stmt> {
     let mut optimized = Vec::new();
     for stmt in stmts {
         let opt_stmt = optimize_stmt(stmt);
-        
+
         let is_return = matches!(&opt_stmt, Stmt::Return(_));
-        
+
         match opt_stmt {
             Stmt::If(cond, body, else_body) => {
                 if let Expr::Integer(val) = &cond {
@@ -1313,30 +1734,34 @@ pub fn optimize_block(stmts: &[Stmt]) -> Vec<Stmt> {
 
                 let mut hoisted = std::collections::HashSet::new();
                 let new_cond = hoist_array_len_expr(&cond, &mut hoisted, &mutated_vars);
-                
+
                 if let Expr::Integer(val) = &new_cond {
                     if val == "0" {
                         continue;
                     }
                 }
-                
+
                 let mut sorted_hoists: Vec<String> = hoisted.into_iter().collect();
                 sorted_hoists.sort();
                 for arr_name in sorted_hoists {
                     optimized.push(Stmt::Let(
                         format!("_hoist_{}_len", arr_name),
                         Some(Type::I32),
-                        Expr::MethodCall(Box::new(Expr::Identifier(arr_name)), "len".to_string(), vec![])
+                        Expr::MethodCall(
+                            Box::new(Expr::Identifier(arr_name)),
+                            "len".to_string(),
+                            vec![],
+                        ),
                     ));
                 }
-                
+
                 optimized.push(Stmt::While(new_cond, body));
             }
             _ => {
                 optimized.push(opt_stmt);
             }
         }
-        
+
         if is_return {
             break;
         }
@@ -1558,7 +1983,7 @@ fn collect_locals_in_body(body: &[Stmt], locals: &mut HashSet<String>) {
 
 fn has_complex_returns(body: &[Stmt]) -> bool {
     let mut return_count = 0;
-    
+
     fn count_returns_stmt(stmt: &Stmt, count: &mut usize) {
         match stmt {
             Stmt::Return(_) => {
@@ -1587,22 +2012,22 @@ fn has_complex_returns(body: &[Stmt]) -> bool {
             _ => {}
         }
     }
-    
+
     for s in body {
         count_returns_stmt(s, &mut return_count);
     }
-    
+
     if return_count > 1 {
         return true;
     }
-    
+
     if return_count == 1 {
         if let Some(Stmt::Return(_)) = body.last() {
             return false;
         }
         return true;
     }
-    
+
     false
 }
 
@@ -1615,97 +2040,128 @@ fn rename_vars_in_expr(expr: &Expr, rename_map: &HashMap<String, String>) -> Exp
                 expr.clone()
             }
         }
-        Expr::InvokeFuncPtr(func_expr, args) => {
-            Expr::InvokeFuncPtr(
-                Box::new(rename_vars_in_expr(func_expr, rename_map)),
-                args.iter().map(|a| rename_vars_in_expr(a, rename_map)).collect()
-            )
-        }
-        Expr::Call(name, args) => {
-            Expr::Call(name.clone(), args.iter().map(|a| rename_vars_in_expr(a, rename_map)).collect())
-        }
-        Expr::MethodCall(obj, m, args) => {
-            Expr::MethodCall(
-                Box::new(rename_vars_in_expr(obj, rename_map)),
-                m.clone(),
-                args.iter().map(|a| rename_vars_in_expr(a, rename_map)).collect()
-            )
-        }
-        Expr::Binary(l, op, r) => {
-            Expr::Binary(
-                Box::new(rename_vars_in_expr(l, rename_map)),
-                *op,
-                Box::new(rename_vars_in_expr(r, rename_map))
-            )
-        }
-        Expr::Cast(e, t) => {
-            Expr::Cast(Box::new(rename_vars_in_expr(e, rename_map)), t.clone())
-        }
-        Expr::Spread(e) => {
-            Expr::Spread(Box::new(rename_vars_in_expr(e, rename_map)))
-        }
+        Expr::InvokeFuncPtr(func_expr, args) => Expr::InvokeFuncPtr(
+            Box::new(rename_vars_in_expr(func_expr, rename_map)),
+            args.iter()
+                .map(|a| rename_vars_in_expr(a, rename_map))
+                .collect(),
+        ),
+        Expr::Call(name, args) => Expr::Call(
+            name.clone(),
+            args.iter()
+                .map(|a| rename_vars_in_expr(a, rename_map))
+                .collect(),
+        ),
+        Expr::MethodCall(obj, m, args) => Expr::MethodCall(
+            Box::new(rename_vars_in_expr(obj, rename_map)),
+            m.clone(),
+            args.iter()
+                .map(|a| rename_vars_in_expr(a, rename_map))
+                .collect(),
+        ),
+        Expr::Binary(l, op, r) => Expr::Binary(
+            Box::new(rename_vars_in_expr(l, rename_map)),
+            *op,
+            Box::new(rename_vars_in_expr(r, rename_map)),
+        ),
+        Expr::Cast(e, t) => Expr::Cast(Box::new(rename_vars_in_expr(e, rename_map)), t.clone()),
+        Expr::Spread(e) => Expr::Spread(Box::new(rename_vars_in_expr(e, rename_map))),
         Expr::FieldAccess(e, f) => {
             Expr::FieldAccess(Box::new(rename_vars_in_expr(e, rename_map)), f.clone())
         }
-        Expr::IndexAccess(arr, idx) => {
-            Expr::IndexAccess(
-                Box::new(rename_vars_in_expr(arr, rename_map)),
-                Box::new(rename_vars_in_expr(idx, rename_map))
-            )
-        }
-        Expr::New(t, args) => {
-            Expr::New(t.clone(), args.iter().map(|a| rename_vars_in_expr(a, rename_map)).collect())
-        }
-        Expr::StructInit(n, fields) => {
-            Expr::StructInit(
-                n.clone(),
-                fields.iter().map(|(f, e)| (f.clone(), rename_vars_in_expr(e, rename_map))).collect()
-            )
-        }
-        Expr::Tuple(exprs) => {
-            Expr::Tuple(exprs.iter().map(|e| rename_vars_in_expr(e, rename_map)).collect())
-        }
-        Expr::MapLit(pairs) => {
-            Expr::MapLit(pairs.iter().map(|(k, v)| (rename_vars_in_expr(k, rename_map), rename_vars_in_expr(v, rename_map))).collect())
-        }
-        Expr::VecLit(elems) => {
-            Expr::VecLit(elems.iter().map(|e| rename_vars_in_expr(e, rename_map)).collect())
-        }
-        Expr::Match(cond, arms) => {
-            Expr::Match(
-                Box::new(rename_vars_in_expr(cond, rename_map)),
-                arms.iter().map(|arm| MatchArm {
+        Expr::IndexAccess(arr, idx) => Expr::IndexAccess(
+            Box::new(rename_vars_in_expr(arr, rename_map)),
+            Box::new(rename_vars_in_expr(idx, rename_map)),
+        ),
+        Expr::New(t, args) => Expr::New(
+            t.clone(),
+            args.iter()
+                .map(|a| rename_vars_in_expr(a, rename_map))
+                .collect(),
+        ),
+        Expr::StructInit(n, fields) => Expr::StructInit(
+            n.clone(),
+            fields
+                .iter()
+                .map(|(f, e)| (f.clone(), rename_vars_in_expr(e, rename_map)))
+                .collect(),
+        ),
+        Expr::Tuple(exprs) => Expr::Tuple(
+            exprs
+                .iter()
+                .map(|e| rename_vars_in_expr(e, rename_map))
+                .collect(),
+        ),
+        Expr::MapLit(pairs) => Expr::MapLit(
+            pairs
+                .iter()
+                .map(|(k, v)| {
+                    (
+                        rename_vars_in_expr(k, rename_map),
+                        rename_vars_in_expr(v, rename_map),
+                    )
+                })
+                .collect(),
+        ),
+        Expr::VecLit(elems) => Expr::VecLit(
+            elems
+                .iter()
+                .map(|e| rename_vars_in_expr(e, rename_map))
+                .collect(),
+        ),
+        Expr::Match(cond, arms) => Expr::Match(
+            Box::new(rename_vars_in_expr(cond, rename_map)),
+            arms.iter()
+                .map(|arm| MatchArm {
                     pattern: arm.pattern.clone(),
-                    body: arm.body.iter().map(|s| rename_vars_in_stmt(s, rename_map)).collect(),
+                    body: arm
+                        .body
+                        .iter()
+                        .map(|s| rename_vars_in_stmt(s, rename_map))
+                        .collect(),
                     val: arm.val.as_ref().map(|v| rename_vars_in_expr(v, rename_map)),
-                }).collect()
-            )
-        }
+                })
+                .collect(),
+        ),
         Expr::If(cond, then_branch, else_branch) => {
             let (then_stmts, then_val) = &**then_branch;
             let new_then = Box::new((
-                then_stmts.iter().map(|s| rename_vars_in_stmt(s, rename_map)).collect(),
-                then_val.as_ref().map(|v| rename_vars_in_expr(v, rename_map))
+                then_stmts
+                    .iter()
+                    .map(|s| rename_vars_in_stmt(s, rename_map))
+                    .collect(),
+                then_val
+                    .as_ref()
+                    .map(|v| rename_vars_in_expr(v, rename_map)),
             ));
             let new_else = else_branch.as_ref().map(|eb| {
                 let (else_stmts, else_val) = &**eb;
                 Box::new((
-                    else_stmts.iter().map(|s| rename_vars_in_stmt(s, rename_map)).collect(),
-                    else_val.as_ref().map(|v| rename_vars_in_expr(v, rename_map))
+                    else_stmts
+                        .iter()
+                        .map(|s| rename_vars_in_stmt(s, rename_map))
+                        .collect(),
+                    else_val
+                        .as_ref()
+                        .map(|v| rename_vars_in_expr(v, rename_map)),
                 ))
             });
             Expr::If(
                 Box::new(rename_vars_in_expr(cond, rename_map)),
                 new_then,
-                new_else
+                new_else,
             )
         }
         Expr::Closure(func) => {
             let mut new_func = *func.clone();
-            new_func.body = new_func.body.iter().map(|s| rename_vars_in_stmt(s, rename_map)).collect();
+            new_func.body = new_func
+                .body
+                .iter()
+                .map(|s| rename_vars_in_stmt(s, rename_map))
+                .collect();
             Expr::Closure(Box::new(new_func))
         }
-        _ => expr.clone()
+        _ => expr.clone(),
     }
 }
 
@@ -1713,13 +2169,20 @@ fn rename_vars_in_stmt(stmt: &Stmt, rename_map: &HashMap<String, String>) -> Stm
     match stmt {
         Stmt::Let(name, ty, expr) => {
             let new_name = rename_map.get(name).unwrap_or(name);
-            Stmt::Let(new_name.clone(), ty.clone(), rename_vars_in_expr(expr, rename_map))
+            Stmt::Let(
+                new_name.clone(),
+                ty.clone(),
+                rename_vars_in_expr(expr, rename_map),
+            )
         }
         Stmt::LetTuple(bindings, expr) => {
-            let new_bindings = bindings.iter().map(|(name, ty)| {
-                let new_name = rename_map.get(name).unwrap_or(name);
-                (new_name.clone(), ty.clone())
-            }).collect();
+            let new_bindings = bindings
+                .iter()
+                .map(|(name, ty)| {
+                    let new_name = rename_map.get(name).unwrap_or(name);
+                    (new_name.clone(), ty.clone())
+                })
+                .collect();
             Stmt::LetTuple(new_bindings, rename_vars_in_expr(expr, rename_map))
         }
         Stmt::Assign(name, expr) => {
@@ -1730,45 +2193,48 @@ fn rename_vars_in_stmt(stmt: &Stmt, rename_map: &HashMap<String, String>) -> Stm
             let new_name = rename_map.get(name).unwrap_or(name);
             Stmt::AssignPlus(new_name.clone(), rename_vars_in_expr(expr, rename_map))
         }
-        Stmt::AssignIndex(arr, idx, val) => {
-            Stmt::AssignIndex(
-                Box::new(rename_vars_in_expr(arr, rename_map)),
-                Box::new(rename_vars_in_expr(idx, rename_map)),
-                rename_vars_in_expr(val, rename_map)
-            )
-        }
-        Stmt::AssignField(obj, f, val) => {
-            Stmt::AssignField(
-                Box::new(rename_vars_in_expr(obj, rename_map)),
-                f.clone(),
-                rename_vars_in_expr(val, rename_map)
-            )
-        }
-        Stmt::ExprStmt(expr) => {
-            Stmt::ExprStmt(rename_vars_in_expr(expr, rename_map))
-        }
-        Stmt::Return(opt_expr) => {
-            Stmt::Return(opt_expr.as_ref().map(|e| rename_vars_in_expr(e, rename_map)))
-        }
-        Stmt::If(cond, then_body, else_body) => {
-            Stmt::If(
-                rename_vars_in_expr(cond, rename_map),
-                then_body.iter().map(|s| rename_vars_in_stmt(s, rename_map)).collect(),
-                else_body.as_ref().map(|eb| eb.iter().map(|s| rename_vars_in_stmt(s, rename_map)).collect())
-            )
-        }
-        Stmt::While(cond, body) => {
-            Stmt::While(
-                rename_vars_in_expr(cond, rename_map),
-                body.iter().map(|s| rename_vars_in_stmt(s, rename_map)).collect()
-            )
-        }
+        Stmt::AssignIndex(arr, idx, val) => Stmt::AssignIndex(
+            Box::new(rename_vars_in_expr(arr, rename_map)),
+            Box::new(rename_vars_in_expr(idx, rename_map)),
+            rename_vars_in_expr(val, rename_map),
+        ),
+        Stmt::AssignField(obj, f, val) => Stmt::AssignField(
+            Box::new(rename_vars_in_expr(obj, rename_map)),
+            f.clone(),
+            rename_vars_in_expr(val, rename_map),
+        ),
+        Stmt::ExprStmt(expr) => Stmt::ExprStmt(rename_vars_in_expr(expr, rename_map)),
+        Stmt::Return(opt_expr) => Stmt::Return(
+            opt_expr
+                .as_ref()
+                .map(|e| rename_vars_in_expr(e, rename_map)),
+        ),
+        Stmt::If(cond, then_body, else_body) => Stmt::If(
+            rename_vars_in_expr(cond, rename_map),
+            then_body
+                .iter()
+                .map(|s| rename_vars_in_stmt(s, rename_map))
+                .collect(),
+            else_body.as_ref().map(|eb| {
+                eb.iter()
+                    .map(|s| rename_vars_in_stmt(s, rename_map))
+                    .collect()
+            }),
+        ),
+        Stmt::While(cond, body) => Stmt::While(
+            rename_vars_in_expr(cond, rename_map),
+            body.iter()
+                .map(|s| rename_vars_in_stmt(s, rename_map))
+                .collect(),
+        ),
         Stmt::For(var, iterable, body) => {
             let new_var = rename_map.get(var).unwrap_or(var);
             Stmt::For(
                 new_var.clone(),
                 iterable.clone(),
-                body.iter().map(|s| rename_vars_in_stmt(s, rename_map)).collect()
+                body.iter()
+                    .map(|s| rename_vars_in_stmt(s, rename_map))
+                    .collect(),
             )
         }
     }
@@ -1788,51 +2254,62 @@ fn inline_local_closures_in_stmt(
                 Stmt::Let(
                     name,
                     ty,
-                    inline_local_closures_in_expr(expr, closure_defs, var_counter, prepended_stmts)
+                    inline_local_closures_in_expr(expr, closure_defs, var_counter, prepended_stmts),
                 )
             }
         }
-        Stmt::LetTuple(bindings, expr) => {
-            Stmt::LetTuple(
-                bindings,
-                inline_local_closures_in_expr(expr, closure_defs, var_counter, prepended_stmts)
-            )
-        }
-        Stmt::Assign(name, expr) => {
-            Stmt::Assign(
-                name,
-                inline_local_closures_in_expr(expr, closure_defs, var_counter, prepended_stmts)
-            )
-        }
-        Stmt::AssignPlus(name, expr) => {
-            Stmt::AssignPlus(
-                name,
-                inline_local_closures_in_expr(expr, closure_defs, var_counter, prepended_stmts)
-            )
-        }
-        Stmt::AssignIndex(arr, idx, val) => {
-            Stmt::AssignIndex(
-                Box::new(inline_local_closures_in_expr(*arr, closure_defs, var_counter, prepended_stmts)),
-                Box::new(inline_local_closures_in_expr(*idx, closure_defs, var_counter, prepended_stmts)),
-                inline_local_closures_in_expr(val, closure_defs, var_counter, prepended_stmts)
-            )
-        }
-        Stmt::AssignField(obj, f, val) => {
-            Stmt::AssignField(
-                Box::new(inline_local_closures_in_expr(*obj, closure_defs, var_counter, prepended_stmts)),
-                f,
-                inline_local_closures_in_expr(val, closure_defs, var_counter, prepended_stmts)
-            )
-        }
-        Stmt::ExprStmt(expr) => {
-            Stmt::ExprStmt(inline_local_closures_in_expr(expr, closure_defs, var_counter, prepended_stmts))
-        }
+        Stmt::LetTuple(bindings, expr) => Stmt::LetTuple(
+            bindings,
+            inline_local_closures_in_expr(expr, closure_defs, var_counter, prepended_stmts),
+        ),
+        Stmt::Assign(name, expr) => Stmt::Assign(
+            name,
+            inline_local_closures_in_expr(expr, closure_defs, var_counter, prepended_stmts),
+        ),
+        Stmt::AssignPlus(name, expr) => Stmt::AssignPlus(
+            name,
+            inline_local_closures_in_expr(expr, closure_defs, var_counter, prepended_stmts),
+        ),
+        Stmt::AssignIndex(arr, idx, val) => Stmt::AssignIndex(
+            Box::new(inline_local_closures_in_expr(
+                *arr,
+                closure_defs,
+                var_counter,
+                prepended_stmts,
+            )),
+            Box::new(inline_local_closures_in_expr(
+                *idx,
+                closure_defs,
+                var_counter,
+                prepended_stmts,
+            )),
+            inline_local_closures_in_expr(val, closure_defs, var_counter, prepended_stmts),
+        ),
+        Stmt::AssignField(obj, f, val) => Stmt::AssignField(
+            Box::new(inline_local_closures_in_expr(
+                *obj,
+                closure_defs,
+                var_counter,
+                prepended_stmts,
+            )),
+            f,
+            inline_local_closures_in_expr(val, closure_defs, var_counter, prepended_stmts),
+        ),
+        Stmt::ExprStmt(expr) => Stmt::ExprStmt(inline_local_closures_in_expr(
+            expr,
+            closure_defs,
+            var_counter,
+            prepended_stmts,
+        )),
         Stmt::Return(opt_expr) => {
-            Stmt::Return(opt_expr.map(|e| inline_local_closures_in_expr(e, closure_defs, var_counter, prepended_stmts)))
+            Stmt::Return(opt_expr.map(|e| {
+                inline_local_closures_in_expr(e, closure_defs, var_counter, prepended_stmts)
+            }))
         }
         Stmt::If(cond, then_body, else_body) => {
-            let new_cond = inline_local_closures_in_expr(cond, closure_defs, var_counter, prepended_stmts);
-            
+            let new_cond =
+                inline_local_closures_in_expr(cond, closure_defs, var_counter, prepended_stmts);
+
             let mut new_then = Vec::new();
             for s in then_body {
                 let mut prep = Vec::new();
@@ -1840,25 +2317,27 @@ fn inline_local_closures_in_stmt(
                 new_then.extend(prep);
                 new_then.push(new_s);
             }
-            
+
             let new_else = else_body.map(|eb| {
                 let mut new_eb = Vec::new();
                 for s in eb {
                     let mut prep = Vec::new();
-                    let new_s = inline_local_closures_in_stmt(s, closure_defs, var_counter, &mut prep);
+                    let new_s =
+                        inline_local_closures_in_stmt(s, closure_defs, var_counter, &mut prep);
                     new_eb.extend(prep);
                     new_eb.push(new_s);
                 }
                 new_eb
             });
-            
+
             Stmt::If(new_cond, new_then, new_else)
         }
         Stmt::While(cond, body) => {
             let mut prep_cond = Vec::new();
-            let new_cond = inline_local_closures_in_expr(cond, closure_defs, var_counter, &mut prep_cond);
+            let new_cond =
+                inline_local_closures_in_expr(cond, closure_defs, var_counter, &mut prep_cond);
             prepended_stmts.extend(prep_cond);
-            
+
             let mut new_body = Vec::new();
             for s in body {
                 let mut prep = Vec::new();
@@ -1866,7 +2345,7 @@ fn inline_local_closures_in_stmt(
                 new_body.extend(prep);
                 new_body.push(new_s);
             }
-            
+
             Stmt::While(new_cond, new_body)
         }
         Stmt::For(var, iterable, body) => {
@@ -1895,52 +2374,57 @@ fn inline_local_closures_in_expr(
                     let mut rename_map = HashMap::new();
                     let mut locals = HashSet::new();
                     collect_locals_in_body(&func.body, &mut locals);
-                    
+
                     let mut all_to_rename = locals;
                     for p in &func.params {
                         all_to_rename.insert(p.name.clone());
                     }
-                    
+
                     for n in all_to_rename {
                         let unique_name = format!("__inline_var_{}_{}", n, *var_counter);
                         *var_counter += 1;
                         rename_map.insert(n, unique_name);
                     }
-                    
+
                     for (i, p) in func.params.iter().enumerate() {
-                        let arg_val = inline_local_closures_in_expr(args[i].clone(), closure_defs, var_counter, prepended_stmts);
+                        let arg_val = inline_local_closures_in_expr(
+                            args[i].clone(),
+                            closure_defs,
+                            var_counter,
+                            prepended_stmts,
+                        );
                         let renamed_param = rename_map.get(&p.name).unwrap();
                         prepended_stmts.push(Stmt::Let(
                             renamed_param.clone(),
                             Some(p.ty.clone()),
-                            arg_val
+                            arg_val,
                         ));
                     }
-                    
+
                     let mut cloned_body = Vec::new();
                     for s in &func.body {
                         cloned_body.push(rename_vars_in_stmt(s, &rename_map));
                     }
-                    
+
                     if has_complex_returns(&cloned_body) {
                         panic!("Should not attempt to inline closure with complex returns");
                     }
-                    
+
                     if let Some(last_stmt) = cloned_body.pop() {
                         match last_stmt {
                             Stmt::Return(Some(ret_expr)) => {
                                 let ret_ty = func.return_ty.clone();
                                 let return_var_name = format!("__inline_return_{}", *var_counter);
                                 *var_counter += 1;
-                                
+
                                 prepended_stmts.extend(cloned_body);
-                                
+
                                 prepended_stmts.push(Stmt::Let(
                                     return_var_name.clone(),
                                     Some(ret_ty),
-                                    ret_expr
+                                    ret_expr,
                                 ));
-                                
+
                                 return Expr::Identifier(return_var_name);
                             }
                             Stmt::Return(None) => {
@@ -1958,10 +2442,19 @@ fn inline_local_closures_in_expr(
                     }
                 }
             }
-            
+
             Expr::InvokeFuncPtr(
-                Box::new(inline_local_closures_in_expr(*func_expr, closure_defs, var_counter, prepended_stmts)),
-                args.into_iter().map(|a| inline_local_closures_in_expr(a, closure_defs, var_counter, prepended_stmts)).collect()
+                Box::new(inline_local_closures_in_expr(
+                    *func_expr,
+                    closure_defs,
+                    var_counter,
+                    prepended_stmts,
+                )),
+                args.into_iter()
+                    .map(|a| {
+                        inline_local_closures_in_expr(a, closure_defs, var_counter, prepended_stmts)
+                    })
+                    .collect(),
             )
         }
         Expr::Call(name, args) => {
@@ -1969,52 +2462,57 @@ fn inline_local_closures_in_expr(
                 let mut rename_map = HashMap::new();
                 let mut locals = HashSet::new();
                 collect_locals_in_body(&func.body, &mut locals);
-                
+
                 let mut all_to_rename = locals;
                 for p in &func.params {
                     all_to_rename.insert(p.name.clone());
                 }
-                
+
                 for n in all_to_rename {
                     let unique_name = format!("__inline_var_{}_{}", n, *var_counter);
                     *var_counter += 1;
                     rename_map.insert(n, unique_name);
                 }
-                
+
                 for (i, p) in func.params.iter().enumerate() {
-                    let arg_val = inline_local_closures_in_expr(args[i].clone(), closure_defs, var_counter, prepended_stmts);
+                    let arg_val = inline_local_closures_in_expr(
+                        args[i].clone(),
+                        closure_defs,
+                        var_counter,
+                        prepended_stmts,
+                    );
                     let renamed_param = rename_map.get(&p.name).unwrap();
                     prepended_stmts.push(Stmt::Let(
                         renamed_param.clone(),
                         Some(p.ty.clone()),
-                        arg_val
+                        arg_val,
                     ));
                 }
-                
+
                 let mut cloned_body = Vec::new();
                 for s in &func.body {
                     cloned_body.push(rename_vars_in_stmt(s, &rename_map));
                 }
-                
+
                 if has_complex_returns(&cloned_body) {
                     panic!("Should not attempt to inline closure with complex returns");
                 }
-                
+
                 if let Some(last_stmt) = cloned_body.pop() {
                     match last_stmt {
                         Stmt::Return(Some(ret_expr)) => {
                             let ret_ty = func.return_ty.clone();
                             let return_var_name = format!("__inline_return_{}", *var_counter);
                             *var_counter += 1;
-                            
+
                             prepended_stmts.extend(cloned_body);
-                            
+
                             prepended_stmts.push(Stmt::Let(
                                 return_var_name.clone(),
                                 Some(ret_ty),
-                                ret_expr
+                                ret_expr,
                             ));
-                            
+
                             return Expr::Identifier(return_var_name);
                         }
                         Stmt::Return(None) => {
@@ -2031,99 +2529,181 @@ fn inline_local_closures_in_expr(
                     return Expr::Default;
                 }
             }
-            
+
             Expr::Call(
                 name,
-                args.into_iter().map(|a| inline_local_closures_in_expr(a, closure_defs, var_counter, prepended_stmts)).collect()
+                args.into_iter()
+                    .map(|a| {
+                        inline_local_closures_in_expr(a, closure_defs, var_counter, prepended_stmts)
+                    })
+                    .collect(),
             )
         }
-        Expr::MethodCall(obj, m, args) => {
-            Expr::MethodCall(
-                Box::new(inline_local_closures_in_expr(*obj, closure_defs, var_counter, prepended_stmts)),
-                m,
-                args.into_iter().map(|a| inline_local_closures_in_expr(a, closure_defs, var_counter, prepended_stmts)).collect()
-            )
-        }
-        Expr::Binary(l, op, r) => {
-            Expr::Binary(
-                Box::new(inline_local_closures_in_expr(*l, closure_defs, var_counter, prepended_stmts)),
-                op,
-                Box::new(inline_local_closures_in_expr(*r, closure_defs, var_counter, prepended_stmts))
-            )
-        }
-        Expr::Cast(e, t) => {
-            Expr::Cast(
-                Box::new(inline_local_closures_in_expr(*e, closure_defs, var_counter, prepended_stmts)),
-                t
-            )
-        }
-        Expr::Spread(e) => {
-            Expr::Spread(Box::new(inline_local_closures_in_expr(*e, closure_defs, var_counter, prepended_stmts)))
-        }
-        Expr::FieldAccess(e, f) => {
-            Expr::FieldAccess(
-                Box::new(inline_local_closures_in_expr(*e, closure_defs, var_counter, prepended_stmts)),
-                f
-            )
-        }
-        Expr::IndexAccess(arr, idx) => {
-            Expr::IndexAccess(
-                Box::new(inline_local_closures_in_expr(*arr, closure_defs, var_counter, prepended_stmts)),
-                Box::new(inline_local_closures_in_expr(*idx, closure_defs, var_counter, prepended_stmts))
-            )
-        }
-        Expr::New(t, args) => {
-            Expr::New(
-                t,
-                args.into_iter().map(|a| inline_local_closures_in_expr(a, closure_defs, var_counter, prepended_stmts)).collect()
-            )
-        }
-        Expr::StructInit(n, fields) => {
-            Expr::StructInit(
-                n,
-                fields.into_iter().map(|(f, e)| (f, inline_local_closures_in_expr(e, closure_defs, var_counter, prepended_stmts))).collect()
-            )
-        }
-        Expr::Tuple(exprs) => {
-            Expr::Tuple(
-                exprs.into_iter().map(|e| inline_local_closures_in_expr(e, closure_defs, var_counter, prepended_stmts)).collect()
-            )
-        }
-        Expr::MapLit(pairs) => {
-            Expr::MapLit(
-                pairs.into_iter().map(|(k, v)| (
-                    inline_local_closures_in_expr(k, closure_defs, var_counter, prepended_stmts),
-                    inline_local_closures_in_expr(v, closure_defs, var_counter, prepended_stmts)
-                )).collect()
-            )
-        }
-        Expr::VecLit(elems) => {
-            Expr::VecLit(
-                elems.into_iter().map(|e| inline_local_closures_in_expr(e, closure_defs, var_counter, prepended_stmts)).collect()
-            )
-        }
-        Expr::Match(cond, arms) => {
-            Expr::Match(
-                Box::new(inline_local_closures_in_expr(*cond, closure_defs, var_counter, prepended_stmts)),
-                arms.into_iter().map(|arm| {
+        Expr::MethodCall(obj, m, args) => Expr::MethodCall(
+            Box::new(inline_local_closures_in_expr(
+                *obj,
+                closure_defs,
+                var_counter,
+                prepended_stmts,
+            )),
+            m,
+            args.into_iter()
+                .map(|a| {
+                    inline_local_closures_in_expr(a, closure_defs, var_counter, prepended_stmts)
+                })
+                .collect(),
+        ),
+        Expr::Binary(l, op, r) => Expr::Binary(
+            Box::new(inline_local_closures_in_expr(
+                *l,
+                closure_defs,
+                var_counter,
+                prepended_stmts,
+            )),
+            op,
+            Box::new(inline_local_closures_in_expr(
+                *r,
+                closure_defs,
+                var_counter,
+                prepended_stmts,
+            )),
+        ),
+        Expr::Cast(e, t) => Expr::Cast(
+            Box::new(inline_local_closures_in_expr(
+                *e,
+                closure_defs,
+                var_counter,
+                prepended_stmts,
+            )),
+            t,
+        ),
+        Expr::Spread(e) => Expr::Spread(Box::new(inline_local_closures_in_expr(
+            *e,
+            closure_defs,
+            var_counter,
+            prepended_stmts,
+        ))),
+        Expr::FieldAccess(e, f) => Expr::FieldAccess(
+            Box::new(inline_local_closures_in_expr(
+                *e,
+                closure_defs,
+                var_counter,
+                prepended_stmts,
+            )),
+            f,
+        ),
+        Expr::IndexAccess(arr, idx) => Expr::IndexAccess(
+            Box::new(inline_local_closures_in_expr(
+                *arr,
+                closure_defs,
+                var_counter,
+                prepended_stmts,
+            )),
+            Box::new(inline_local_closures_in_expr(
+                *idx,
+                closure_defs,
+                var_counter,
+                prepended_stmts,
+            )),
+        ),
+        Expr::New(t, args) => Expr::New(
+            t,
+            args.into_iter()
+                .map(|a| {
+                    inline_local_closures_in_expr(a, closure_defs, var_counter, prepended_stmts)
+                })
+                .collect(),
+        ),
+        Expr::StructInit(n, fields) => Expr::StructInit(
+            n,
+            fields
+                .into_iter()
+                .map(|(f, e)| {
+                    (
+                        f,
+                        inline_local_closures_in_expr(
+                            e,
+                            closure_defs,
+                            var_counter,
+                            prepended_stmts,
+                        ),
+                    )
+                })
+                .collect(),
+        ),
+        Expr::Tuple(exprs) => Expr::Tuple(
+            exprs
+                .into_iter()
+                .map(|e| {
+                    inline_local_closures_in_expr(e, closure_defs, var_counter, prepended_stmts)
+                })
+                .collect(),
+        ),
+        Expr::MapLit(pairs) => Expr::MapLit(
+            pairs
+                .into_iter()
+                .map(|(k, v)| {
+                    (
+                        inline_local_closures_in_expr(
+                            k,
+                            closure_defs,
+                            var_counter,
+                            prepended_stmts,
+                        ),
+                        inline_local_closures_in_expr(
+                            v,
+                            closure_defs,
+                            var_counter,
+                            prepended_stmts,
+                        ),
+                    )
+                })
+                .collect(),
+        ),
+        Expr::VecLit(elems) => Expr::VecLit(
+            elems
+                .into_iter()
+                .map(|e| {
+                    inline_local_closures_in_expr(e, closure_defs, var_counter, prepended_stmts)
+                })
+                .collect(),
+        ),
+        Expr::Match(cond, arms) => Expr::Match(
+            Box::new(inline_local_closures_in_expr(
+                *cond,
+                closure_defs,
+                var_counter,
+                prepended_stmts,
+            )),
+            arms.into_iter()
+                .map(|arm| {
                     let mut new_body = Vec::new();
                     for s in arm.body {
                         let mut prep = Vec::new();
-                        let new_s = inline_local_closures_in_stmt(s, closure_defs, var_counter, &mut prep);
+                        let new_s =
+                            inline_local_closures_in_stmt(s, closure_defs, var_counter, &mut prep);
                         new_body.extend(prep);
                         new_body.push(new_s);
                     }
                     MatchArm {
                         pattern: arm.pattern,
                         body: new_body,
-                        val: arm.val.map(|v| inline_local_closures_in_expr(v, closure_defs, var_counter, prepended_stmts)),
+                        val: arm.val.map(|v| {
+                            inline_local_closures_in_expr(
+                                v,
+                                closure_defs,
+                                var_counter,
+                                prepended_stmts,
+                            )
+                        }),
                     }
-                }).collect()
-            )
-        }
+                })
+                .collect(),
+        ),
         Expr::If(cond, then_branch, else_branch) => {
-            let new_cond = inline_local_closures_in_expr(*cond, closure_defs, var_counter, prepended_stmts);
-            
+            let new_cond =
+                inline_local_closures_in_expr(*cond, closure_defs, var_counter, prepended_stmts);
+
             let (then_stmts, then_val) = *then_branch;
             let mut new_then_stmts = Vec::new();
             for s in then_stmts {
@@ -2132,25 +2712,30 @@ fn inline_local_closures_in_expr(
                 new_then_stmts.extend(prep);
                 new_then_stmts.push(new_s);
             }
-            let new_then_val = then_val.map(|v| inline_local_closures_in_expr(v, closure_defs, var_counter, prepended_stmts));
-            
+            let new_then_val = then_val.map(|v| {
+                inline_local_closures_in_expr(v, closure_defs, var_counter, prepended_stmts)
+            });
+
             let new_else = else_branch.map(|eb| {
                 let (else_stmts, else_val) = *eb;
                 let mut new_else_stmts = Vec::new();
                 for s in else_stmts {
                     let mut prep = Vec::new();
-                    let new_s = inline_local_closures_in_stmt(s, closure_defs, var_counter, &mut prep);
+                    let new_s =
+                        inline_local_closures_in_stmt(s, closure_defs, var_counter, &mut prep);
                     new_else_stmts.extend(prep);
                     new_else_stmts.push(new_s);
                 }
-                let new_else_val = else_val.map(|v| inline_local_closures_in_expr(v, closure_defs, var_counter, prepended_stmts));
+                let new_else_val = else_val.map(|v| {
+                    inline_local_closures_in_expr(v, closure_defs, var_counter, prepended_stmts)
+                });
                 Box::new((new_else_stmts, new_else_val))
             });
-            
+
             Expr::If(
                 Box::new(new_cond),
                 Box::new((new_then_stmts, new_then_val)),
-                new_else
+                new_else,
             )
         }
         Expr::Closure(func) => {
@@ -2165,20 +2750,20 @@ fn inline_local_closures_in_expr(
             new_func.body = new_body;
             Expr::Closure(Box::new(new_func))
         }
-        other => other
+        other => other,
     }
 }
 
 pub fn inline_closures_in_function(f: &mut Function) {
     let mut total_usages = HashMap::new();
     let mut call_usages = HashMap::new();
-    
+
     for s in &f.body {
         count_usages_stmt(s, &mut total_usages, &mut call_usages);
     }
-    
+
     let mut candidates = HashMap::new();
-    
+
     fn find_closure_defs(stmt: &Stmt, candidates: &mut HashMap<String, Function>) {
         match stmt {
             Stmt::Let(name, _, Expr::Closure(func)) => {
@@ -2207,11 +2792,11 @@ pub fn inline_closures_in_function(f: &mut Function) {
             _ => {}
         }
     }
-    
+
     for s in &f.body {
         find_closure_defs(s, &mut candidates);
     }
-    
+
     let mut closure_defs = HashMap::new();
     for (name, func) in candidates {
         let is_only_called = total_usages.get(&name) == call_usages.get(&name);
@@ -2219,11 +2804,11 @@ pub fn inline_closures_in_function(f: &mut Function) {
             closure_defs.insert(name, func);
         }
     }
-    
+
     if closure_defs.is_empty() {
         return;
     }
-    
+
     let mut var_counter = 0;
     let mut new_body = Vec::new();
     for s in f.body.drain(..) {

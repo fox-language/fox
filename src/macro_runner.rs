@@ -1,9 +1,12 @@
+use crate::ast::*;
 use std::collections::HashMap;
 use std::collections::HashSet;
-use crate::ast::*;
 use wasmtime::*;
 
-fn to_str<'a>(caller: &'a impl AsContext, val: Option<Rooted<ExternRef>>) -> Result<&'a str, wasmtime::Error> {
+fn to_str<'a>(
+    caller: &'a impl AsContext,
+    val: Option<Rooted<ExternRef>>,
+) -> Result<&'a str, wasmtime::Error> {
     if let Some(r) = val {
         if let Some(data) = r.data(caller)? {
             if let Some(s) = data.downcast_ref::<String>() {
@@ -14,7 +17,10 @@ fn to_str<'a>(caller: &'a impl AsContext, val: Option<Rooted<ExternRef>>) -> Res
     Ok("")
 }
 
-fn to_string(caller: &impl AsContext, val: Option<Rooted<ExternRef>>) -> Result<String, wasmtime::Error> {
+fn to_string(
+    caller: &impl AsContext,
+    val: Option<Rooted<ExternRef>>,
+) -> Result<String, wasmtime::Error> {
     if let Some(r) = val {
         if let Some(data) = r.data(caller)? {
             if let Some(s) = data.downcast_ref::<String>() {
@@ -25,12 +31,18 @@ fn to_string(caller: &impl AsContext, val: Option<Rooted<ExternRef>>) -> Result<
     Ok(String::new())
 }
 
-fn to_ref(caller: impl AsContextMut, s: String) -> Result<Option<Rooted<ExternRef>>, wasmtime::Error> {
+fn to_ref(
+    caller: impl AsContextMut,
+    s: String,
+) -> Result<Option<Rooted<ExternRef>>, wasmtime::Error> {
     let r = ExternRef::new(caller, s)?;
     Ok(Some(r))
 }
 
-fn to_ref_nonnull(caller: impl AsContextMut, s: String) -> Result<Rooted<ExternRef>, wasmtime::Error> {
+fn to_ref_nonnull(
+    caller: impl AsContextMut,
+    s: String,
+) -> Result<Rooted<ExternRef>, wasmtime::Error> {
     ExternRef::new(caller, s)
 }
 
@@ -46,7 +58,8 @@ fn find_export(instance: &Instance, store: &mut Store<()>, suffix: &str) -> Opti
 }
 
 fn sanitize(name: &str) -> String {
-    name.replace("::", "_").replace(|c: char| !c.is_alphanumeric() && c != '_', "_")
+    name.replace("::", "_")
+        .replace(|c: char| !c.is_alphanumeric() && c != '_', "_")
 }
 
 fn call_func(func: &Func, store: &mut Store<()>, args: &[Val]) -> Result<Val, wasmtime::Error> {
@@ -60,7 +73,11 @@ fn func_call_void(func: &Func, store: &mut Store<()>, args: &[Val]) -> Result<()
     Ok(())
 }
 
-fn setup_wasmtime_linker(linker: &mut Linker<()>, store: &mut Store<()>, module: &Module) -> Result<(), wasmtime::Error> {
+fn setup_wasmtime_linker(
+    linker: &mut Linker<()>,
+    store: &mut Store<()>,
+    module: &Module,
+) -> Result<(), wasmtime::Error> {
     macro_rules! reg {
         ($full:expr, $short:expr, $func:expr) => {
             linker.func_wrap("env", $full, $func)?;
@@ -69,60 +86,144 @@ fn setup_wasmtime_linker(linker: &mut Linker<()>, store: &mut Store<()>, module:
     }
 
     // 1. env module functions (registered under both full and shortened names)
-    reg!("__fox_panic", "f_p", |caller: Caller<'_, ()>, val: Option<Rooted<ExternRef>>| -> Result<(), wasmtime::Error> {
+    reg!("__fox_panic", "f_p", |caller: Caller<'_, ()>,
+                                val: Option<Rooted<ExternRef>>|
+     -> Result<(), wasmtime::Error> {
         let msg = to_str(&caller, val)?;
         Err(wasmtime::Error::msg(format!("Fox Panic: {}", msg)))
     });
 
-    reg!("__fox_str_starts_with", "f_ss", |caller: Caller<'_, ()>, s: Option<Rooted<ExternRef>>, prefix: Option<Rooted<ExternRef>>| -> Result<i32, wasmtime::Error> {
+    reg!("__fox_str_starts_with", "f_ss", |caller: Caller<'_, ()>,
+                                           s: Option<
+        Rooted<ExternRef>,
+    >,
+                                           prefix: Option<
+        Rooted<ExternRef>,
+    >|
+     -> Result<
+        i32,
+        wasmtime::Error,
+    > {
         let s_str = to_str(&caller, s)?;
         let pre_str = to_str(&caller, prefix)?;
         Ok(if s_str.starts_with(pre_str) { 1 } else { 0 })
     });
 
-    reg!("__fox_str_ends_with", "f_se", |caller: Caller<'_, ()>, s: Option<Rooted<ExternRef>>, suffix: Option<Rooted<ExternRef>>| -> Result<i32, wasmtime::Error> {
+    reg!("__fox_str_ends_with", "f_se", |caller: Caller<'_, ()>,
+                                         s: Option<
+        Rooted<ExternRef>,
+    >,
+                                         suffix: Option<
+        Rooted<ExternRef>,
+    >|
+     -> Result<
+        i32,
+        wasmtime::Error,
+    > {
         let s_str = to_str(&caller, s)?;
         let suf_str = to_str(&caller, suffix)?;
         Ok(if s_str.ends_with(suf_str) { 1 } else { 0 })
     });
 
-    reg!("__fox_str_contains", "f_sc", |caller: Caller<'_, ()>, s: Option<Rooted<ExternRef>>, sub: Option<Rooted<ExternRef>>| -> Result<i32, wasmtime::Error> {
+    reg!("__fox_str_contains", "f_sc", |caller: Caller<'_, ()>,
+                                        s: Option<
+        Rooted<ExternRef>,
+    >,
+                                        sub: Option<
+        Rooted<ExternRef>,
+    >|
+     -> Result<
+        i32,
+        wasmtime::Error,
+    > {
         let s_str = to_str(&caller, s)?;
         let sub_str = to_str(&caller, sub)?;
         Ok(if s_str.contains(sub_str) { 1 } else { 0 })
     });
 
-    reg!("__fox_str_index_of", "f_si", |caller: Caller<'_, ()>, s: Option<Rooted<ExternRef>>, sub: Option<Rooted<ExternRef>>| -> Result<i32, wasmtime::Error> {
+    reg!("__fox_str_index_of", "f_si", |caller: Caller<'_, ()>,
+                                        s: Option<
+        Rooted<ExternRef>,
+    >,
+                                        sub: Option<
+        Rooted<ExternRef>,
+    >|
+     -> Result<
+        i32,
+        wasmtime::Error,
+    > {
         let s_str = to_str(&caller, s)?;
         let sub_str = to_str(&caller, sub)?;
         Ok(s_str.find(sub_str).map(|i| i as i32).unwrap_or(-1))
     });
 
-    reg!("__fox_str_last_index_of", "f_sl", |caller: Caller<'_, ()>, s: Option<Rooted<ExternRef>>, sub: Option<Rooted<ExternRef>>| -> Result<i32, wasmtime::Error> {
+    reg!("__fox_str_last_index_of", "f_sl", |caller: Caller<
+        '_,
+        (),
+    >,
+                                             s: Option<
+        Rooted<ExternRef>,
+    >,
+                                             sub: Option<
+        Rooted<ExternRef>,
+    >|
+     -> Result<
+        i32,
+        wasmtime::Error,
+    > {
         let s_str = to_str(&caller, s)?;
         let sub_str = to_str(&caller, sub)?;
         Ok(s_str.rfind(sub_str).map(|i| i as i32).unwrap_or(-1))
     });
 
-    reg!("__fox_str_is_empty", "f_semp", |caller: Caller<'_, ()>, s: Option<Rooted<ExternRef>>| -> Result<i32, wasmtime::Error> {
+    reg!("__fox_str_is_empty", "f_semp", |caller: Caller<'_, ()>,
+                                          s: Option<
+        Rooted<ExternRef>,
+    >|
+     -> Result<
+        i32,
+        wasmtime::Error,
+    > {
         let s_str = to_str(&caller, s)?;
         Ok(if s_str.is_empty() { 1 } else { 0 })
     });
 
-    reg!("__fox_str_eq", "f_seq", |caller: Caller<'_, ()>, a: Option<Rooted<ExternRef>>, b: Option<Rooted<ExternRef>>| -> Result<i32, wasmtime::Error> {
+    reg!("__fox_str_eq", "f_seq", |caller: Caller<'_, ()>,
+                                   a: Option<Rooted<ExternRef>>,
+                                   b: Option<Rooted<ExternRef>>|
+     -> Result<
+        i32,
+        wasmtime::Error,
+    > {
         let a_str = to_str(&caller, a)?;
         let b_str = to_str(&caller, b)?;
         Ok(if a_str == b_str { 1 } else { 0 })
     });
 
-    reg!("__fox_str_join", "f_sjn", |caller: Caller<'_, ()>, a: Option<Rooted<ExternRef>>, b: Option<Rooted<ExternRef>>| -> Result<Option<Rooted<ExternRef>>, wasmtime::Error> {
+    reg!("__fox_str_join", "f_sjn", |caller: Caller<'_, ()>,
+                                     a: Option<Rooted<ExternRef>>,
+                                     b: Option<Rooted<ExternRef>>|
+     -> Result<
+        Option<Rooted<ExternRef>>,
+        wasmtime::Error,
+    > {
         let a_str = to_string(&caller, a)?;
         let b_str = to_string(&caller, b)?;
         let joined = format!("{}{}", a_str, b_str);
         to_ref(caller, joined)
     });
 
-    reg!("__fox_str_compare", "f_scmp", |caller: Caller<'_, ()>, a: Option<Rooted<ExternRef>>, b: Option<Rooted<ExternRef>>| -> Result<i32, wasmtime::Error> {
+    reg!("__fox_str_compare", "f_scmp", |caller: Caller<'_, ()>,
+                                         a: Option<
+        Rooted<ExternRef>,
+    >,
+                                         b: Option<
+        Rooted<ExternRef>,
+    >|
+     -> Result<
+        i32,
+        wasmtime::Error,
+    > {
         let a_str = to_str(&caller, a)?;
         let b_str = to_str(&caller, b)?;
         Ok(match a_str.cmp(b_str) {
@@ -132,7 +233,16 @@ fn setup_wasmtime_linker(linker: &mut Linker<()>, store: &mut Store<()>, module:
         })
     });
 
-    reg!("__fox_str_substring", "f_sub", |caller: Caller<'_, ()>, s: Option<Rooted<ExternRef>>, start: i32, end: i32| -> Result<Option<Rooted<ExternRef>>, wasmtime::Error> {
+    reg!("__fox_str_substring", "f_sub", |caller: Caller<'_, ()>,
+                                          s: Option<
+        Rooted<ExternRef>,
+    >,
+                                          start: i32,
+                                          end: i32|
+     -> Result<
+        Option<Rooted<ExternRef>>,
+        wasmtime::Error,
+    > {
         let s_str = to_string(&caller, s)?;
         let start_idx = (start.max(0) as usize).min(s_str.len());
         let end_idx = (end.max(0) as usize).min(s_str.len());
@@ -144,19 +254,42 @@ fn setup_wasmtime_linker(linker: &mut Linker<()>, store: &mut Store<()>, module:
         to_ref(caller, sub.to_string())
     });
 
-    reg!("__fox_f64_to_str", "f_f2s", |caller: Caller<'_, ()>, val: f64| -> Result<Option<Rooted<ExternRef>>, wasmtime::Error> {
+    reg!("__fox_f64_to_str", "f_f2s", |caller: Caller<'_, ()>,
+                                       val: f64|
+     -> Result<
+        Option<Rooted<ExternRef>>,
+        wasmtime::Error,
+    > {
         to_ref(caller, val.to_string())
     });
 
-    reg!("__fox_i32_to_str", "f_i2s", |caller: Caller<'_, ()>, val: i32| -> Result<Option<Rooted<ExternRef>>, wasmtime::Error> {
+    reg!("__fox_i32_to_str", "f_i2s", |caller: Caller<'_, ()>,
+                                       val: i32|
+     -> Result<
+        Option<Rooted<ExternRef>>,
+        wasmtime::Error,
+    > {
         to_ref(caller, val.to_string())
     });
 
-    reg!("__fox_i64_to_str", "f_l2s", |caller: Caller<'_, ()>, val: i64| -> Result<Option<Rooted<ExternRef>>, wasmtime::Error> {
+    reg!("__fox_i64_to_str", "f_l2s", |caller: Caller<'_, ()>,
+                                       val: i64|
+     -> Result<
+        Option<Rooted<ExternRef>>,
+        wasmtime::Error,
+    > {
         to_ref(caller, val.to_string())
     });
 
-    reg!("__fox_dom_console", "f_con", |caller: Caller<'_, ()>, level: i32, msg: Option<Rooted<ExternRef>>| -> Result<(), wasmtime::Error> {
+    reg!("__fox_dom_console", "f_con", |caller: Caller<'_, ()>,
+                                        level: i32,
+                                        msg: Option<
+        Rooted<ExternRef>,
+    >|
+     -> Result<
+        (),
+        wasmtime::Error,
+    > {
         let msg_str = to_str(&caller, msg)?;
         match level {
             1 => eprintln!("{}", msg_str),
@@ -169,79 +302,160 @@ fn setup_wasmtime_linker(linker: &mut Linker<()>, store: &mut Store<()>, module:
         Ok(())
     });
 
-    reg!("__fox_json_parse_int", "f_jpi", |caller: Caller<'_, ()>, val: Option<Rooted<ExternRef>>| -> Result<i32, wasmtime::Error> {
+    reg!("__fox_json_parse_int", "f_jpi", |caller: Caller<'_, ()>,
+                                           val: Option<
+        Rooted<ExternRef>,
+    >|
+     -> Result<
+        i32,
+        wasmtime::Error,
+    > {
         let s = to_str(&caller, val)?;
         Ok(s.parse::<i32>().unwrap_or(0))
     });
 
-    reg!("__fox_json_parse_float", "f_jpf", |caller: Caller<'_, ()>, val: Option<Rooted<ExternRef>>| -> Result<f64, wasmtime::Error> {
+    reg!("__fox_json_parse_float", "f_jpf", |caller: Caller<
+        '_,
+        (),
+    >,
+                                             val: Option<
+        Rooted<ExternRef>,
+    >|
+     -> Result<
+        f64,
+        wasmtime::Error,
+    > {
         let s = to_str(&caller, val)?;
         Ok(s.parse::<f64>().unwrap_or(0.0))
     });
 
-    reg!("__fox_json_encode_string", "f_jes", |caller: Caller<'_, ()>, val: Option<Rooted<ExternRef>>| -> Result<Option<Rooted<ExternRef>>, wasmtime::Error> {
+    reg!("__fox_json_encode_string", "f_jes", |caller: Caller<
+        '_,
+        (),
+    >,
+                                               val: Option<
+        Rooted<ExternRef>,
+    >|
+     -> Result<
+        Option<Rooted<ExternRef>>,
+        wasmtime::Error,
+    > {
         let s = to_string(&caller, val)?;
         let encoded = serde_json::to_string(&s).unwrap_or_default();
         to_ref(caller, encoded)
     });
 
-    reg!("__fox_json_parse_string", "f_jps", |caller: Caller<'_, ()>, val: Option<Rooted<ExternRef>>| -> Result<Option<Rooted<ExternRef>>, wasmtime::Error> {
+    reg!("__fox_json_parse_string", "f_jps", |caller: Caller<
+        '_,
+        (),
+    >,
+                                              val: Option<
+        Rooted<ExternRef>,
+    >|
+     -> Result<
+        Option<Rooted<ExternRef>>,
+        wasmtime::Error,
+    > {
         let s = to_string(&caller, val)?;
         let parsed: String = serde_json::from_str(&s).unwrap_or_else(|_| s);
         to_ref(caller, parsed)
     });
 
     // 2. wasm:js-string module functions
-    linker.func_wrap("wasm:js-string", "length", |caller: Caller<'_, ()>, s: Option<Rooted<ExternRef>>| -> Result<i32, wasmtime::Error> {
-        let s_str = to_str(&caller, s)?;
-        Ok(s_str.encode_utf16().count() as i32)
-    })?;
+    linker.func_wrap(
+        "wasm:js-string",
+        "length",
+        |caller: Caller<'_, ()>, s: Option<Rooted<ExternRef>>| -> Result<i32, wasmtime::Error> {
+            let s_str = to_str(&caller, s)?;
+            Ok(s_str.encode_utf16().count() as i32)
+        },
+    )?;
 
-    linker.func_wrap("wasm:js-string", "charCodeAt", |caller: Caller<'_, ()>, s: Option<Rooted<ExternRef>>, index: i32| -> Result<i32, wasmtime::Error> {
-        let s_str = to_str(&caller, s)?;
-        let char_code = s_str.encode_utf16().nth(index as usize).unwrap_or(0);
-        Ok(char_code as i32)
-    })?;
+    linker.func_wrap(
+        "wasm:js-string",
+        "charCodeAt",
+        |caller: Caller<'_, ()>,
+         s: Option<Rooted<ExternRef>>,
+         index: i32|
+         -> Result<i32, wasmtime::Error> {
+            let s_str = to_str(&caller, s)?;
+            let char_code = s_str.encode_utf16().nth(index as usize).unwrap_or(0);
+            Ok(char_code as i32)
+        },
+    )?;
 
-    linker.func_wrap("wasm:js-string", "fromCharCode", |caller: Caller<'_, ()>, c: i32| -> Result<Rooted<ExternRef>, wasmtime::Error> {
-        let character = std::char::from_u32(c as u32).unwrap_or(' ').to_string();
-        to_ref_nonnull(caller, character)
-    })?;
+    linker.func_wrap(
+        "wasm:js-string",
+        "fromCharCode",
+        |caller: Caller<'_, ()>, c: i32| -> Result<Rooted<ExternRef>, wasmtime::Error> {
+            let character = std::char::from_u32(c as u32).unwrap_or(' ').to_string();
+            to_ref_nonnull(caller, character)
+        },
+    )?;
 
-    linker.func_wrap("wasm:js-string", "concat", |caller: Caller<'_, ()>, a: Option<Rooted<ExternRef>>, b: Option<Rooted<ExternRef>>| -> Result<Rooted<ExternRef>, wasmtime::Error> {
-        let a_str = to_string(&caller, a)?;
-        let b_str = to_string(&caller, b)?;
-        let joined = format!("{}{}", a_str, b_str);
-        to_ref_nonnull(caller, joined)
-    })?;
+    linker.func_wrap(
+        "wasm:js-string",
+        "concat",
+        |caller: Caller<'_, ()>,
+         a: Option<Rooted<ExternRef>>,
+         b: Option<Rooted<ExternRef>>|
+         -> Result<Rooted<ExternRef>, wasmtime::Error> {
+            let a_str = to_string(&caller, a)?;
+            let b_str = to_string(&caller, b)?;
+            let joined = format!("{}{}", a_str, b_str);
+            to_ref_nonnull(caller, joined)
+        },
+    )?;
 
-    linker.func_wrap("wasm:js-string", "substring", |caller: Caller<'_, ()>, s: Option<Rooted<ExternRef>>, start: i32, end: i32| -> Result<Rooted<ExternRef>, wasmtime::Error> {
-        let s_str = to_string(&caller, s)?;
-        let start_idx = (start.max(0) as usize).min(s_str.len());
-        let end_idx = (end.max(0) as usize).min(s_str.len());
-        let sub = if start_idx <= end_idx {
-            &s_str[start_idx..end_idx]
-        } else {
-            ""
-        };
-        to_ref_nonnull(caller, sub.to_string())
-    })?;
+    linker.func_wrap(
+        "wasm:js-string",
+        "substring",
+        |caller: Caller<'_, ()>,
+         s: Option<Rooted<ExternRef>>,
+         start: i32,
+         end: i32|
+         -> Result<Rooted<ExternRef>, wasmtime::Error> {
+            let s_str = to_string(&caller, s)?;
+            let start_idx = (start.max(0) as usize).min(s_str.len());
+            let end_idx = (end.max(0) as usize).min(s_str.len());
+            let sub = if start_idx <= end_idx {
+                &s_str[start_idx..end_idx]
+            } else {
+                ""
+            };
+            to_ref_nonnull(caller, sub.to_string())
+        },
+    )?;
 
-    linker.func_wrap("wasm:js-string", "equals", |caller: Caller<'_, ()>, a: Option<Rooted<ExternRef>>, b: Option<Rooted<ExternRef>>| -> Result<i32, wasmtime::Error> {
-        let a_str = to_str(&caller, a)?;
-        let b_str = to_str(&caller, b)?;
-        Ok(if a_str == b_str { 1 } else { 0 })
-    })?;
+    linker.func_wrap(
+        "wasm:js-string",
+        "equals",
+        |caller: Caller<'_, ()>,
+         a: Option<Rooted<ExternRef>>,
+         b: Option<Rooted<ExternRef>>|
+         -> Result<i32, wasmtime::Error> {
+            let a_str = to_str(&caller, a)?;
+            let b_str = to_str(&caller, b)?;
+            Ok(if a_str == b_str { 1 } else { 0 })
+        },
+    )?;
 
-    linker.func_wrap("wasm:js-string", "compare", |caller: Caller<'_, ()>, a: Option<Rooted<ExternRef>>, b: Option<Rooted<ExternRef>>| -> Result<i32, wasmtime::Error> {
-        let a_str = to_str(&caller, a)?;
-        let b_str = to_str(&caller, b)?;
-        Ok(match a_str.cmp(b_str) {
-            std::cmp::Ordering::Less => -1,
-            std::cmp::Ordering::Equal => 0,
-            std::cmp::Ordering::Greater => 1,
-        })
-    })?;
+    linker.func_wrap(
+        "wasm:js-string",
+        "compare",
+        |caller: Caller<'_, ()>,
+         a: Option<Rooted<ExternRef>>,
+         b: Option<Rooted<ExternRef>>|
+         -> Result<i32, wasmtime::Error> {
+            let a_str = to_str(&caller, a)?;
+            let b_str = to_str(&caller, b)?;
+            Ok(match a_str.cmp(b_str) {
+                std::cmp::Ordering::Less => -1,
+                std::cmp::Ordering::Equal => 0,
+                std::cmp::Ordering::Greater => 1,
+            })
+        },
+    )?;
 
     // 3. Register stubs for any other function imports that are not explicitly defined.
     // This handles any missing import from env or wasm:js-string.
@@ -252,26 +466,28 @@ fn setup_wasmtime_linker(linker: &mut Linker<()>, store: &mut Store<()>, module:
                 let name = import.name();
                 if linker.get(&mut *store, module_name, name).is_none() {
                     let func_ty_clone = func_ty.clone();
-                    let dummy_func = Func::new(&mut *store, func_ty, move |mut caller, _args, results| {
-                        for (i, ty) in func_ty_clone.results().enumerate() {
-                            results[i] = match ty {
-                                ValType::I32 => Val::I32(0),
-                                ValType::I64 => Val::I64(0),
-                                ValType::F32 => Val::F32(0),
-                                ValType::F64 => Val::F64(0),
-                                ValType::Ref(ref_ty) => {
-                                    if ref_ty.is_nullable() {
-                                        Val::null_ref(ref_ty.heap_type())
-                                    } else {
-                                        let dummy = ExternRef::new(&mut caller, String::new()).unwrap();
-                                        Val::ExternRef(Some(dummy))
+                    let dummy_func =
+                        Func::new(&mut *store, func_ty, move |mut caller, _args, results| {
+                            for (i, ty) in func_ty_clone.results().enumerate() {
+                                results[i] = match ty {
+                                    ValType::I32 => Val::I32(0),
+                                    ValType::I64 => Val::I64(0),
+                                    ValType::F32 => Val::F32(0),
+                                    ValType::F64 => Val::F64(0),
+                                    ValType::Ref(ref_ty) => {
+                                        if ref_ty.is_nullable() {
+                                            Val::null_ref(ref_ty.heap_type())
+                                        } else {
+                                            let dummy =
+                                                ExternRef::new(&mut caller, String::new()).unwrap();
+                                            Val::ExternRef(Some(dummy))
+                                        }
                                     }
-                                }
-                                _ => Val::null_any_ref(),
-                            };
-                        }
-                        Ok(())
-                    });
+                                    _ => Val::null_any_ref(),
+                                };
+                            }
+                            Ok(())
+                        });
                     linker.define(&mut *store, module_name, name, dummy_func)?;
                 }
             }
@@ -295,7 +511,7 @@ fn run_macros_inner(
             break;
         }
     }
-    
+
     if !has_macros {
         return Ok(false);
     }
@@ -304,7 +520,9 @@ fn run_macros_inner(
     let mut macro_funcs = Vec::new();
     let mut seen_funcs = HashSet::new();
     for f in parsed_funcs.iter() {
-        if (f.is_compiler || f.is_extern || f.name.starts_with("std::")) && seen_funcs.insert(f.name.clone()) {
+        if (f.is_compiler || f.is_extern || f.name.starts_with("std::"))
+            && seen_funcs.insert(f.name.clone())
+        {
             macro_funcs.push(f.clone());
         }
     }
@@ -318,7 +536,7 @@ fn run_macros_inner(
     }
 
     let string_literals = crate::collect_string_literals(&macro_funcs, parsed_consts);
-    
+
     let (wat_content, _filtered_structs) = crate::codegen::generate_wat(
         &macro_funcs,
         &macro_structs,
@@ -346,7 +564,11 @@ fn run_macros_inner(
     // Register string literal globals
     for (id, lit) in string_literals.iter().enumerate() {
         let val = Val::ExternRef(Some(ExternRef::new(&mut store, lit.clone())?));
-        let global = Global::new(&mut store, GlobalType::new(ValType::EXTERNREF, Mutability::Const), val)?;
+        let global = Global::new(
+            &mut store,
+            GlobalType::new(ValType::EXTERNREF, Mutability::Const),
+            val,
+        )?;
         linker.define(&mut store, "env", &format!("s{}", id), global)?;
     }
 
@@ -366,29 +588,53 @@ fn run_macros_inner(
     }
 
     // Find AST memory allocation exports
-    let alloc_node = node_struct_name.as_ref().and_then(|name| find_export(&instance, &mut store, &sanitize(name)));
-    let alloc_field = field_struct_name.as_ref().and_then(|name| find_export(&instance, &mut store, &sanitize(name)));
-    let alloc_array = field_struct_name.as_ref().and_then(|name| find_export(&instance, &mut store, &format!("array_{}", sanitize(name))));
-    let set_array = field_struct_name.as_ref().and_then(|name| find_export(&instance, &mut store, &format!("set_array_{}", sanitize(name))));
+    let alloc_node = node_struct_name
+        .as_ref()
+        .and_then(|name| find_export(&instance, &mut store, &sanitize(name)));
+    let alloc_field = field_struct_name
+        .as_ref()
+        .and_then(|name| find_export(&instance, &mut store, &sanitize(name)));
+    let alloc_array = field_struct_name
+        .as_ref()
+        .and_then(|name| find_export(&instance, &mut store, &format!("array_{}", sanitize(name))));
+    let set_array = field_struct_name.as_ref().and_then(|name| {
+        find_export(
+            &instance,
+            &mut store,
+            &format!("set_array_{}", sanitize(name)),
+        )
+    });
 
     let mut output_lines = Vec::new();
 
     // Iterate and run macros
     for struct_def in parsed_structs.iter() {
         for attr in &struct_def.attributes {
-            let macro_func = instance.get_func(&mut store, &attr.name)
-                .or_else(|| find_export(&instance, &mut store, &format!("_{}", sanitize(&attr.name))))
+            let macro_func = instance
+                .get_func(&mut store, &attr.name)
+                .or_else(|| {
+                    find_export(&instance, &mut store, &format!("_{}", sanitize(&attr.name)))
+                })
                 .or_else(|| find_export(&instance, &mut store, &sanitize(&attr.name)));
 
             if let Some(func) = macro_func {
                 let node_ptr = if let Some(ref alloc_node_fn) = alloc_node {
-                    let name_ref = Val::ExternRef(Some(ExternRef::new(&mut store, struct_def.name.clone())?));
+                    let name_ref =
+                        Val::ExternRef(Some(ExternRef::new(&mut store, struct_def.name.clone())?));
                     Some(call_func(alloc_node_fn, &mut store, &[name_ref])?)
                 } else {
                     None
                 };
 
-                let fields_arr = if let (Some(alloc_array_fn), Some(alloc_field_fn), Some(set_array_fn)) = (alloc_array.as_ref(), alloc_field.as_ref(), set_array.as_ref()) {
+                let fields_arr = if let (
+                    Some(alloc_array_fn),
+                    Some(alloc_field_fn),
+                    Some(set_array_fn),
+                ) = (
+                    alloc_array.as_ref(),
+                    alloc_field.as_ref(),
+                    set_array.as_ref(),
+                ) {
                     let len_val = Val::I32(struct_def.fields.len() as i32);
                     let arr_val = call_func(alloc_array_fn, &mut store, &[len_val])?;
 
@@ -401,14 +647,22 @@ fn run_macros_inner(
                             }
                         }
 
-                        let name_ref = Val::ExternRef(Some(ExternRef::new(&mut store, field.name.clone())?));
-                        let ty_ref = Val::ExternRef(Some(ExternRef::new(&mut store, field.ty.to_string())?));
-                        let rename_ref = Val::ExternRef(Some(ExternRef::new(&mut store, rename_to)?));
+                        let name_ref =
+                            Val::ExternRef(Some(ExternRef::new(&mut store, field.name.clone())?));
+                        let ty_ref =
+                            Val::ExternRef(Some(ExternRef::new(&mut store, field.ty.to_string())?));
+                        let rename_ref =
+                            Val::ExternRef(Some(ExternRef::new(&mut store, rename_to)?));
 
-                        let field_ptr = call_func(alloc_field_fn, &mut store, &[name_ref, ty_ref, rename_ref])?;
+                        let field_ptr =
+                            call_func(alloc_field_fn, &mut store, &[name_ref, ty_ref, rename_ref])?;
 
                         let idx_val = Val::I32(i as i32);
-                        func_call_void(set_array_fn, &mut store, &[arr_val.clone(), idx_val, field_ptr])?;
+                        func_call_void(
+                            set_array_fn,
+                            &mut store,
+                            &[arr_val.clone(), idx_val, field_ptr],
+                        )?;
                     }
                     Some(arr_val)
                 } else {
@@ -423,9 +677,7 @@ fn run_macros_inner(
                     (Some(np), _) if param_count >= 1 => {
                         call_func(&func, &mut store, &[np.clone()])?
                     }
-                    _ => {
-                        call_func(&func, &mut store, &[])?
-                    }
+                    _ => call_func(&func, &mut store, &[])?,
                 };
 
                 if let Val::ExternRef(Some(ext_ref)) = result_val {
@@ -443,12 +695,12 @@ fn run_macros_inner(
     if generated_code.trim().is_empty() {
         return Ok(false);
     }
-    
+
     // Parse the generated code
     let lexer = crate::lexer::Lexer::new(&generated_code);
     let mut parser = crate::parser::Parser::new(lexer);
     let items = parser.parse_module();
-    
+
     let mut added_anything = false;
     for item in items {
         match item {
@@ -497,7 +749,13 @@ pub fn run_macros(
     parsed_consts: &mut Vec<ConstDef>,
     imports_registry: &HashMap<String, HashSet<String>>,
 ) -> bool {
-    match run_macros_inner(parsed_structs, parsed_funcs, parsed_impls, parsed_consts, imports_registry) {
+    match run_macros_inner(
+        parsed_structs,
+        parsed_funcs,
+        parsed_impls,
+        parsed_consts,
+        imports_registry,
+    ) {
         Ok(res) => res,
         Err(e) => {
             eprintln!("Macro execution failed: {:?}", e);

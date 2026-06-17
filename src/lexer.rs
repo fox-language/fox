@@ -1,6 +1,6 @@
+use crate::ast::{Span, Spanned, Token};
 use std::iter::Peekable;
 use std::str::Chars;
-use crate::ast::{Token, Span, Spanned};
 
 #[derive(Clone)]
 pub struct Lexer<'a> {
@@ -273,13 +273,35 @@ impl<'a> Lexer<'a> {
                         self.consume();
                         if let Some(&next) = self.chars.peek() {
                             match next {
-                                'n' => { s.push('\n'); self.consume(); }
-                                't' => { s.push('\t'); self.consume(); }
-                                'r' => { s.push('\r'); self.consume(); }
-                                '\\' => { s.push('\\'); self.consume(); }
-                                '"' => { s.push('"'); self.consume(); }
-                                '0' => { s.push('\0'); self.consume(); }
-                                _ => { s.push(ch); s.push(next); self.consume(); }
+                                'n' => {
+                                    s.push('\n');
+                                    self.consume();
+                                }
+                                't' => {
+                                    s.push('\t');
+                                    self.consume();
+                                }
+                                'r' => {
+                                    s.push('\r');
+                                    self.consume();
+                                }
+                                '\\' => {
+                                    s.push('\\');
+                                    self.consume();
+                                }
+                                '"' => {
+                                    s.push('"');
+                                    self.consume();
+                                }
+                                '0' => {
+                                    s.push('\0');
+                                    self.consume();
+                                }
+                                _ => {
+                                    s.push(ch);
+                                    s.push(next);
+                                    self.consume();
+                                }
                             }
                         }
                     } else if ch != '"' {
@@ -328,9 +350,8 @@ impl<'a> Lexer<'a> {
                     "else" => Token::Else,
                     "match" => Token::Match,
                     "default" => Token::Default,
-                    "i32" | "i64" | "u32" | "u64" | "f32" | "f64" | "str" | "byte" | "bool" | "anyref" => {
-                        Token::Type(ident)
-                    }
+                    "i32" | "i64" | "u32" | "u64" | "f32" | "f64" | "str" | "byte" | "bool"
+                    | "anyref" => Token::Type(ident),
                     _ => Token::Identifier(ident),
                 }
             }

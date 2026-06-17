@@ -13,7 +13,15 @@ pub fn lift_closures_in_funcs(funcs: &mut Vec<Function>, structs: &mut Vec<Struc
             var_types.insert(p.name.clone(), p.ty.to_string());
         }
         for s in &mut f.body {
-            lift_closures_stmt(s, &mut var_types, &mut closure_idx, &mut new_funcs, structs, &f.name, &original_funcs);
+            lift_closures_stmt(
+                s,
+                &mut var_types,
+                &mut closure_idx,
+                &mut new_funcs,
+                structs,
+                &f.name,
+                &original_funcs,
+            );
         }
     }
     funcs.extend(new_funcs);
@@ -40,7 +48,10 @@ fn resolve_struct_name_for_closure(name: &str, structs: &[StructDef]) -> String 
     };
 
     for s in structs {
-        if s.name == normalized || s.name.ends_with(&format!("::{}", normalized)) || normalized.ends_with(&format!("::{}", s.name)) {
+        if s.name == normalized
+            || s.name.ends_with(&format!("::{}", normalized))
+            || normalized.ends_with(&format!("::{}", s.name))
+        {
             return s.name.clone();
         }
     }
@@ -73,7 +84,11 @@ fn infer_expr_type(
             for p in &func.params {
                 params_str.push(p.ty.to_string());
             }
-            Some(format!("fn({}):{}", params_str.join(","), func.return_ty.to_string()))
+            Some(format!(
+                "fn({}):{}",
+                params_str.join(","),
+                func.return_ty.to_string()
+            ))
         }
         Expr::Tuple(exprs) => {
             let mut tys = Vec::new();
@@ -89,11 +104,14 @@ fn infer_expr_type(
             if pairs.is_empty() {
                 Some("Map<str, anyref>".to_string())
             } else {
-                let k_ty = infer_expr_type(&pairs[0].0, var_types, structs, funcs).unwrap_or_else(|| "str".to_string());
-                let first_v_ty = infer_expr_type(&pairs[0].1, var_types, structs, funcs).unwrap_or_else(|| "anyref".to_string());
+                let k_ty = infer_expr_type(&pairs[0].0, var_types, structs, funcs)
+                    .unwrap_or_else(|| "str".to_string());
+                let first_v_ty = infer_expr_type(&pairs[0].1, var_types, structs, funcs)
+                    .unwrap_or_else(|| "anyref".to_string());
                 let mut v_ty = first_v_ty;
                 for (_, v) in pairs.iter().skip(1) {
-                    let cur_v_ty = infer_expr_type(v, var_types, structs, funcs).unwrap_or_else(|| "anyref".to_string());
+                    let cur_v_ty = infer_expr_type(v, var_types, structs, funcs)
+                        .unwrap_or_else(|| "anyref".to_string());
                     if cur_v_ty != v_ty {
                         v_ty = "anyref".to_string();
                         break;
@@ -106,10 +124,12 @@ fn infer_expr_type(
             if elems.is_empty() {
                 Some("Vec<anyref>".to_string())
             } else {
-                let first_ty = infer_expr_type(&elems[0], var_types, structs, funcs).unwrap_or_else(|| "anyref".to_string());
+                let first_ty = infer_expr_type(&elems[0], var_types, structs, funcs)
+                    .unwrap_or_else(|| "anyref".to_string());
                 let mut elem_ty = first_ty;
                 for el in elems.iter().skip(1) {
-                    let cur_ty = infer_expr_type(el, var_types, structs, funcs).unwrap_or_else(|| "anyref".to_string());
+                    let cur_ty = infer_expr_type(el, var_types, structs, funcs)
+                        .unwrap_or_else(|| "anyref".to_string());
                     if cur_ty != elem_ty {
                         elem_ty = "anyref".to_string();
                         break;
@@ -143,27 +163,42 @@ fn infer_expr_type(
                 let mut depth = 0;
                 let mut current = String::new();
                 for c in args_str.chars() {
-                    if c == '<' { depth += 1; current.push(c); }
-                    else if c == '>' { depth -= 1; current.push(c); }
-                    else if c == ',' && depth == 0 { explicit.push(current.trim().to_string()); current.clear(); }
-                    else { current.push(c); }
+                    if c == '<' {
+                        depth += 1;
+                        current.push(c);
+                    } else if c == '>' {
+                        depth -= 1;
+                        current.push(c);
+                    } else if c == ',' && depth == 0 {
+                        explicit.push(current.trim().to_string());
+                        current.clear();
+                    } else {
+                        current.push(c);
+                    }
                 }
-                if !current.is_empty() { explicit.push(current.trim().to_string()); }
+                if !current.is_empty() {
+                    explicit.push(current.trim().to_string());
+                }
                 (name[..start].to_string(), explicit)
             } else {
                 (name.clone(), Vec::new())
             };
 
             // Find matching function
-            let matched_func = funcs.iter().find(|f| {
-                f.name == base_name || f.name.ends_with(&format!("::{}", base_name)) || base_name.ends_with(&format!("::{}", f.name))
-            }).or_else(|| {
-                let last_seg = base_name.split("::").last().unwrap_or(&base_name);
-                funcs.iter().find(|f| {
-                    let f_last_seg = f.name.split("::").last().unwrap_or(&f.name);
-                    f_last_seg == last_seg
+            let matched_func = funcs
+                .iter()
+                .find(|f| {
+                    f.name == base_name
+                        || f.name.ends_with(&format!("::{}", base_name))
+                        || base_name.ends_with(&format!("::{}", f.name))
                 })
-            });
+                .or_else(|| {
+                    let last_seg = base_name.split("::").last().unwrap_or(&base_name);
+                    funcs.iter().find(|f| {
+                        let f_last_seg = f.name.split("::").last().unwrap_or(&f.name);
+                        f_last_seg == last_seg
+                    })
+                });
 
             if let Some(f) = matched_func {
                 let mut ret_ty = f.return_ty.clone();
@@ -191,54 +226,70 @@ fn infer_expr_type(
                     let mut depth = 0;
                     let mut current = String::new();
                     for c in args_str.chars() {
-                        if c == '<' { depth += 1; current.push(c); }
-                        else if c == '>' { depth -= 1; current.push(c); }
-                        else if c == ',' && depth == 0 { explicit.push(current.trim().to_string()); current.clear(); }
-                        else { current.push(c); }
+                        if c == '<' {
+                            depth += 1;
+                            current.push(c);
+                        } else if c == '>' {
+                            depth -= 1;
+                            current.push(c);
+                        } else if c == ',' && depth == 0 {
+                            explicit.push(current.trim().to_string());
+                            current.clear();
+                        } else {
+                            current.push(c);
+                        }
                     }
-                    if !current.is_empty() { explicit.push(current.trim().to_string()); }
+                    if !current.is_empty() {
+                        explicit.push(current.trim().to_string());
+                    }
                     (obj_ty[..start].to_string(), explicit)
                 } else {
                     (obj_ty.clone(), Vec::new())
                 };
 
-                let resolved_struct_name = resolve_struct_name_for_closure(&base_struct_name, structs);
-                
+                let resolved_struct_name =
+                    resolve_struct_name_for_closure(&base_struct_name, structs);
+
                 // Find parent struct
                 let parent_struct = structs.iter().find(|s| s.name == resolved_struct_name);
-                
+
                 // Find matching method
-                let matched_method = funcs.iter().find(|f| {
-                    if let Some(ref parent) = f.parent_struct {
-                        let f_parent_resolved = resolve_struct_name_for_closure(parent, structs);
-                        if f_parent_resolved == resolved_struct_name {
-                            let last_segment = f.name.split("::").last().unwrap_or(&f.name);
-                            if last_segment == *method {
-                                return true;
+                let matched_method = funcs
+                    .iter()
+                    .find(|f| {
+                        if let Some(ref parent) = f.parent_struct {
+                            let f_parent_resolved =
+                                resolve_struct_name_for_closure(parent, structs);
+                            if f_parent_resolved == resolved_struct_name {
+                                let last_segment = f.name.split("::").last().unwrap_or(&f.name);
+                                if last_segment == *method {
+                                    return true;
+                                }
                             }
                         }
-                    }
-                    false
-                }).or_else(|| {
-                    if let Some(s) = parent_struct {
-                        s.methods.iter().find(|f| {
-                            let last_segment = f.name.split("::").last().unwrap_or(&f.name);
-                            last_segment == *method
-                        })
-                    } else {
-                        None
-                    }
-                });
+                        false
+                    })
+                    .or_else(|| {
+                        if let Some(s) = parent_struct {
+                            s.methods.iter().find(|f| {
+                                let last_segment = f.name.split("::").last().unwrap_or(&f.name);
+                                last_segment == *method
+                            })
+                        } else {
+                            None
+                        }
+                    });
 
                 if let Some(m) = matched_method {
                     let mut ret_ty = m.return_ty.clone();
-                    
+
                     // Substitute parent struct generic params
                     if let Some(s) = parent_struct {
                         if !s.generic.params.is_empty() && !explicit_args.is_empty() {
                             for (idx, gp) in s.generic.params.iter().enumerate() {
                                 if idx < explicit_args.len() {
-                                    let replacement_ty = explicit_args[idx].parse::<Type>().unwrap();
+                                    let replacement_ty =
+                                        explicit_args[idx].parse::<Type>().unwrap();
                                     ret_ty = ret_ty.substitute(&gp.name, &replacement_ty);
                                 }
                             }
@@ -247,11 +298,11 @@ fn infer_expr_type(
                     Some(ret_ty.to_string())
                 } else if let Some(s) = parent_struct {
                     if let Some(field) = s.fields.iter().find(|f| f.name == *method) {
-                    if let Type::Function(_, ref ret) = field.ty {
-                        Some(ret.to_string())
-                    } else {
-                        None
-                    }
+                        if let Type::Function(_, ref ret) = field.ty {
+                            Some(ret.to_string())
+                        } else {
+                            None
+                        }
                     } else {
                         None
                     }
@@ -267,61 +318,147 @@ fn infer_expr_type(
 }
 
 fn lift_closures_stmt(
-    stmt: &mut Stmt, 
-    var_types: &mut HashMap<String, String>, 
-    closure_idx: &mut usize, 
-    new_funcs: &mut Vec<Function>, 
+    stmt: &mut Stmt,
+    var_types: &mut HashMap<String, String>,
+    closure_idx: &mut usize,
+    new_funcs: &mut Vec<Function>,
     structs: &mut Vec<StructDef>,
     parent_func_name: &str,
     funcs: &[Function],
 ) {
     match stmt {
         Stmt::Let(name, ty, expr) => {
-            let inferred_ty = ty.as_ref().map(|t| t.to_string()).or_else(|| infer_expr_type(expr, var_types, structs, funcs));
-            lift_closures_expr(expr, var_types, closure_idx, new_funcs, structs, parent_func_name, funcs);
-            var_types.insert(name.clone(), inferred_ty.unwrap_or_else(|| "anyref".to_string()));
+            let inferred_ty = ty
+                .as_ref()
+                .map(|t| t.to_string())
+                .or_else(|| infer_expr_type(expr, var_types, structs, funcs));
+            lift_closures_expr(
+                expr,
+                var_types,
+                closure_idx,
+                new_funcs,
+                structs,
+                parent_func_name,
+                funcs,
+            );
+            var_types.insert(
+                name.clone(),
+                inferred_ty.unwrap_or_else(|| "anyref".to_string()),
+            );
         }
         Stmt::LetTuple(bindings, expr) => {
-            lift_closures_expr(expr, var_types, closure_idx, new_funcs, structs, parent_func_name, funcs);
+            lift_closures_expr(
+                expr,
+                var_types,
+                closure_idx,
+                new_funcs,
+                structs,
+                parent_func_name,
+                funcs,
+            );
             for (name, ty) in bindings {
                 var_types.insert(name.clone(), ty.to_string());
             }
         }
         Stmt::Assign(_, expr) => {
-            lift_closures_expr(expr, var_types, closure_idx, new_funcs, structs, parent_func_name, funcs);
+            lift_closures_expr(
+                expr,
+                var_types,
+                closure_idx,
+                new_funcs,
+                structs,
+                parent_func_name,
+                funcs,
+            );
         }
         Stmt::ExprStmt(expr) => {
-            lift_closures_expr(expr, var_types, closure_idx, new_funcs, structs, parent_func_name, funcs);
+            lift_closures_expr(
+                expr,
+                var_types,
+                closure_idx,
+                new_funcs,
+                structs,
+                parent_func_name,
+                funcs,
+            );
         }
         Stmt::If(cond, body, else_body) => {
-            lift_closures_expr(cond, var_types, closure_idx, new_funcs, structs, parent_func_name, funcs);
+            lift_closures_expr(
+                cond,
+                var_types,
+                closure_idx,
+                new_funcs,
+                structs,
+                parent_func_name,
+                funcs,
+            );
             for s in body {
-                lift_closures_stmt(s, var_types, closure_idx, new_funcs, structs, parent_func_name, funcs);
+                lift_closures_stmt(
+                    s,
+                    var_types,
+                    closure_idx,
+                    new_funcs,
+                    structs,
+                    parent_func_name,
+                    funcs,
+                );
             }
             if let Some(eb) = else_body {
                 for s in eb {
-                    lift_closures_stmt(s, var_types, closure_idx, new_funcs, structs, parent_func_name, funcs);
+                    lift_closures_stmt(
+                        s,
+                        var_types,
+                        closure_idx,
+                        new_funcs,
+                        structs,
+                        parent_func_name,
+                        funcs,
+                    );
                 }
             }
         }
         Stmt::While(cond, body) => {
-            lift_closures_expr(cond, var_types, closure_idx, new_funcs, structs, parent_func_name, funcs);
+            lift_closures_expr(
+                cond,
+                var_types,
+                closure_idx,
+                new_funcs,
+                structs,
+                parent_func_name,
+                funcs,
+            );
             for s in body {
-                lift_closures_stmt(s, var_types, closure_idx, new_funcs, structs, parent_func_name, funcs);
+                lift_closures_stmt(
+                    s,
+                    var_types,
+                    closure_idx,
+                    new_funcs,
+                    structs,
+                    parent_func_name,
+                    funcs,
+                );
             }
         }
         Stmt::Return(Some(expr)) => {
-            lift_closures_expr(expr, var_types, closure_idx, new_funcs, structs, parent_func_name, funcs);
+            lift_closures_expr(
+                expr,
+                var_types,
+                closure_idx,
+                new_funcs,
+                structs,
+                parent_func_name,
+                funcs,
+            );
         }
         _ => {}
     }
 }
 
 fn lift_closures_expr(
-    expr: &mut Expr, 
-    var_types: &mut HashMap<String, String>, 
-    closure_idx: &mut usize, 
-    new_funcs: &mut Vec<Function>, 
+    expr: &mut Expr,
+    var_types: &mut HashMap<String, String>,
+    closure_idx: &mut usize,
+    new_funcs: &mut Vec<Function>,
     structs: &mut Vec<StructDef>,
     parent_func_name: &str,
     funcs: &[Function],
@@ -329,48 +466,161 @@ fn lift_closures_expr(
     match expr {
         Expr::Tuple(exprs) => {
             for e in exprs {
-                lift_closures_expr(e, var_types, closure_idx, new_funcs, structs, parent_func_name, funcs);
+                lift_closures_expr(
+                    e,
+                    var_types,
+                    closure_idx,
+                    new_funcs,
+                    structs,
+                    parent_func_name,
+                    funcs,
+                );
             }
         }
         Expr::Binary(l, _, r) => {
-            lift_closures_expr(l, var_types, closure_idx, new_funcs, structs, parent_func_name, funcs);
-            lift_closures_expr(r, var_types, closure_idx, new_funcs, structs, parent_func_name, funcs);
+            lift_closures_expr(
+                l,
+                var_types,
+                closure_idx,
+                new_funcs,
+                structs,
+                parent_func_name,
+                funcs,
+            );
+            lift_closures_expr(
+                r,
+                var_types,
+                closure_idx,
+                new_funcs,
+                structs,
+                parent_func_name,
+                funcs,
+            );
         }
         Expr::Call(_, args) => {
             for a in args {
-                lift_closures_expr(a, var_types, closure_idx, new_funcs, structs, parent_func_name, funcs);
+                lift_closures_expr(
+                    a,
+                    var_types,
+                    closure_idx,
+                    new_funcs,
+                    structs,
+                    parent_func_name,
+                    funcs,
+                );
             }
         }
         Expr::MethodCall(obj, _, args) => {
-            lift_closures_expr(obj, var_types, closure_idx, new_funcs, structs, parent_func_name, funcs);
+            lift_closures_expr(
+                obj,
+                var_types,
+                closure_idx,
+                new_funcs,
+                structs,
+                parent_func_name,
+                funcs,
+            );
             for a in args {
-                lift_closures_expr(a, var_types, closure_idx, new_funcs, structs, parent_func_name, funcs);
+                lift_closures_expr(
+                    a,
+                    var_types,
+                    closure_idx,
+                    new_funcs,
+                    structs,
+                    parent_func_name,
+                    funcs,
+                );
             }
         }
         Expr::InvokeFuncPtr(func_expr, args) => {
-            lift_closures_expr(func_expr, var_types, closure_idx, new_funcs, structs, parent_func_name, funcs);
+            lift_closures_expr(
+                func_expr,
+                var_types,
+                closure_idx,
+                new_funcs,
+                structs,
+                parent_func_name,
+                funcs,
+            );
             for a in args {
-                lift_closures_expr(a, var_types, closure_idx, new_funcs, structs, parent_func_name, funcs);
+                lift_closures_expr(
+                    a,
+                    var_types,
+                    closure_idx,
+                    new_funcs,
+                    structs,
+                    parent_func_name,
+                    funcs,
+                );
             }
         }
         Expr::StructInit(_, fields) => {
             for (_, e) in fields {
-                lift_closures_expr(e, var_types, closure_idx, new_funcs, structs, parent_func_name, funcs);
+                lift_closures_expr(
+                    e,
+                    var_types,
+                    closure_idx,
+                    new_funcs,
+                    structs,
+                    parent_func_name,
+                    funcs,
+                );
             }
         }
         Expr::IndexAccess(arr, idx) => {
-            lift_closures_expr(arr, var_types, closure_idx, new_funcs, structs, parent_func_name, funcs);
-            lift_closures_expr(idx, var_types, closure_idx, new_funcs, structs, parent_func_name, funcs);
+            lift_closures_expr(
+                arr,
+                var_types,
+                closure_idx,
+                new_funcs,
+                structs,
+                parent_func_name,
+                funcs,
+            );
+            lift_closures_expr(
+                idx,
+                var_types,
+                closure_idx,
+                new_funcs,
+                structs,
+                parent_func_name,
+                funcs,
+            );
         }
         Expr::FieldAccess(obj, _) => {
-            lift_closures_expr(obj, var_types, closure_idx, new_funcs, structs, parent_func_name, funcs);
+            lift_closures_expr(
+                obj,
+                var_types,
+                closure_idx,
+                new_funcs,
+                structs,
+                parent_func_name,
+                funcs,
+            );
         }
         Expr::Cast(e, _) => {
-            lift_closures_expr(e, var_types, closure_idx, new_funcs, structs, parent_func_name, funcs);
+            lift_closures_expr(
+                e,
+                var_types,
+                closure_idx,
+                new_funcs,
+                structs,
+                parent_func_name,
+                funcs,
+            );
         }
         Expr::Match(cond, arms) => {
-            let cond_ty = infer_expr_type(cond, var_types, structs, funcs).unwrap_or_else(|| "anyref".to_string());
-            lift_closures_expr(cond, var_types, closure_idx, new_funcs, structs, parent_func_name, funcs);
+            let cond_ty = infer_expr_type(cond, var_types, structs, funcs)
+                .unwrap_or_else(|| "anyref".to_string());
+            lift_closures_expr(
+                cond,
+                var_types,
+                closure_idx,
+                new_funcs,
+                structs,
+                parent_func_name,
+                funcs,
+            );
             for arm in arms {
                 let mut arm_var_types = var_types.clone();
                 if cond_ty != "anyref" {
@@ -395,33 +645,97 @@ fn lift_closures_expr(
                     }
                 }
                 for s in &mut arm.body {
-                    lift_closures_stmt(s, &mut arm_var_types, closure_idx, new_funcs, structs, parent_func_name, funcs);
+                    lift_closures_stmt(
+                        s,
+                        &mut arm_var_types,
+                        closure_idx,
+                        new_funcs,
+                        structs,
+                        parent_func_name,
+                        funcs,
+                    );
                 }
                 if let Some(v) = &mut arm.val {
-                    lift_closures_expr(v, &mut arm_var_types, closure_idx, new_funcs, structs, parent_func_name, funcs);
+                    lift_closures_expr(
+                        v,
+                        &mut arm_var_types,
+                        closure_idx,
+                        new_funcs,
+                        structs,
+                        parent_func_name,
+                        funcs,
+                    );
                 }
             }
         }
         Expr::If(cond, then_block, else_block) => {
-            lift_closures_expr(cond, var_types, closure_idx, new_funcs, structs, parent_func_name, funcs);
+            lift_closures_expr(
+                cond,
+                var_types,
+                closure_idx,
+                new_funcs,
+                structs,
+                parent_func_name,
+                funcs,
+            );
             for s in &mut then_block.0 {
-                lift_closures_stmt(s, var_types, closure_idx, new_funcs, structs, parent_func_name, funcs);
+                lift_closures_stmt(
+                    s,
+                    var_types,
+                    closure_idx,
+                    new_funcs,
+                    structs,
+                    parent_func_name,
+                    funcs,
+                );
             }
             if let Some(v) = &mut then_block.1 {
-                lift_closures_expr(v, var_types, closure_idx, new_funcs, structs, parent_func_name, funcs);
+                lift_closures_expr(
+                    v,
+                    var_types,
+                    closure_idx,
+                    new_funcs,
+                    structs,
+                    parent_func_name,
+                    funcs,
+                );
             }
             if let Some(eb) = else_block {
                 for s in &mut eb.0 {
-                    lift_closures_stmt(s, var_types, closure_idx, new_funcs, structs, parent_func_name, funcs);
+                    lift_closures_stmt(
+                        s,
+                        var_types,
+                        closure_idx,
+                        new_funcs,
+                        structs,
+                        parent_func_name,
+                        funcs,
+                    );
                 }
                 if let Some(v) = &mut eb.1 {
-                    lift_closures_expr(v, var_types, closure_idx, new_funcs, structs, parent_func_name, funcs);
+                    lift_closures_expr(
+                        v,
+                        var_types,
+                        closure_idx,
+                        new_funcs,
+                        structs,
+                        parent_func_name,
+                        funcs,
+                    );
                 }
             }
         }
         Expr::New(_, args) => {
             for a in args {
-                lift_closures_expr(a, var_types, closure_idx, new_funcs, structs, parent_func_name, funcs);
+                lift_closures_expr(
+                    a,
+                    var_types,
+                    closure_idx,
+                    new_funcs,
+                    structs,
+                    parent_func_name,
+                    funcs,
+                );
             }
         }
         Expr::Closure(func) => {
@@ -431,22 +745,30 @@ fn lift_closures_expr(
             }
 
             for s in &mut func.body {
-                lift_closures_stmt(s, &mut inner_var_types, closure_idx, new_funcs, structs, parent_func_name, funcs);
+                lift_closures_stmt(
+                    s,
+                    &mut inner_var_types,
+                    closure_idx,
+                    new_funcs,
+                    structs,
+                    parent_func_name,
+                    funcs,
+                );
             }
 
             *closure_idx += 1;
             let env_name = format!("__closure_env_{}", closure_idx);
             let func_name = format!("{}__closure_{}", parent_func_name, closure_idx);
-            
+
             let mut free_vars = HashSet::new();
             collect_free_vars_in_block(&func.body, &mut free_vars, &inner_var_types);
-            
+
             let mut local_vars = HashSet::new();
             for p in &func.params {
                 local_vars.insert(p.name.clone());
             }
             collect_local_vars_in_block(&func.body, &mut local_vars);
-            
+
             let mut captured_vars = Vec::new();
             for f in free_vars {
                 if !local_vars.contains(&f) && var_types.contains_key(&f) {
@@ -479,13 +801,19 @@ fn lift_closures_expr(
                 new_body.push(Stmt::Let(
                     "__env_struct".to_string(),
                     Some(env_name.parse::<Type>().unwrap()),
-                    Expr::Cast(Box::new(Expr::Identifier("__env".to_string())), env_name.parse::<Type>().unwrap())
+                    Expr::Cast(
+                        Box::new(Expr::Identifier("__env".to_string())),
+                        env_name.parse::<Type>().unwrap(),
+                    ),
                 ));
                 for v in &captured_vars {
                     new_body.push(Stmt::Let(
                         v.clone(),
                         Some(var_types[v].parse::<Type>().unwrap()),
-                        Expr::FieldAccess(Box::new(Expr::Identifier("__env_struct".to_string())), v.clone())
+                        Expr::FieldAccess(
+                            Box::new(Expr::Identifier("__env_struct".to_string())),
+                            v.clone(),
+                        ),
                     ));
                 }
             }
@@ -509,20 +837,48 @@ fn lift_closures_expr(
         }
         Expr::MapLit(pairs) => {
             for (k, v) in pairs {
-                lift_closures_expr(k, var_types, closure_idx, new_funcs, structs, parent_func_name, funcs);
-                lift_closures_expr(v, var_types, closure_idx, new_funcs, structs, parent_func_name, funcs);
+                lift_closures_expr(
+                    k,
+                    var_types,
+                    closure_idx,
+                    new_funcs,
+                    structs,
+                    parent_func_name,
+                    funcs,
+                );
+                lift_closures_expr(
+                    v,
+                    var_types,
+                    closure_idx,
+                    new_funcs,
+                    structs,
+                    parent_func_name,
+                    funcs,
+                );
             }
         }
         Expr::VecLit(elems) => {
             for el in elems {
-                lift_closures_expr(el, var_types, closure_idx, new_funcs, structs, parent_func_name, funcs);
+                lift_closures_expr(
+                    el,
+                    var_types,
+                    closure_idx,
+                    new_funcs,
+                    structs,
+                    parent_func_name,
+                    funcs,
+                );
             }
         }
         _ => {}
     }
 }
 
-fn collect_free_vars_in_block(body: &[Stmt], free_vars: &mut HashSet<String>, _var_types: &HashMap<String, String>) {
+fn collect_free_vars_in_block(
+    body: &[Stmt],
+    free_vars: &mut HashSet<String>,
+    _var_types: &HashMap<String, String>,
+) {
     for s in body {
         get_read_vars_stmt(s, free_vars);
         crate::optimizer::get_modified_vars(s, free_vars);
@@ -532,13 +888,17 @@ fn collect_free_vars_in_block(body: &[Stmt], free_vars: &mut HashSet<String>, _v
 fn collect_local_vars_in_block(body: &[Stmt], local_vars: &mut HashSet<String>) {
     for s in body {
         match s {
-            Stmt::Let(n, _, _) => { local_vars.insert(n.clone()); }
+            Stmt::Let(n, _, _) => {
+                local_vars.insert(n.clone());
+            }
             Stmt::LetTuple(bindings, _) => {
                 for (n, _) in bindings {
                     local_vars.insert(n.clone());
                 }
             }
-            Stmt::For(n, _, _) => { local_vars.insert(n.clone()); }
+            Stmt::For(n, _, _) => {
+                local_vars.insert(n.clone());
+            }
             Stmt::If(_, then_body, else_body) => {
                 collect_local_vars_in_block(then_body, local_vars);
                 if let Some(eb) = else_body {
@@ -555,7 +915,10 @@ fn collect_local_vars_in_block(body: &[Stmt], local_vars: &mut HashSet<String>) 
 
 fn get_read_vars_stmt(stmt: &Stmt, vars: &mut HashSet<String>) {
     match stmt {
-        Stmt::Let(_, _, expr) | Stmt::Assign(_, expr) | Stmt::AssignPlus(_, expr) | Stmt::ExprStmt(expr) => {
+        Stmt::Let(_, _, expr)
+        | Stmt::Assign(_, expr)
+        | Stmt::AssignPlus(_, expr)
+        | Stmt::ExprStmt(expr) => {
             crate::optimizer::get_read_vars(expr, vars);
         }
         Stmt::LetTuple(_, expr) => {
@@ -572,18 +935,26 @@ fn get_read_vars_stmt(stmt: &Stmt, vars: &mut HashSet<String>) {
         }
         Stmt::If(cond, body, else_body) => {
             crate::optimizer::get_read_vars(cond, vars);
-            for s in body { get_read_vars_stmt(s, vars); }
+            for s in body {
+                get_read_vars_stmt(s, vars);
+            }
             if let Some(eb) = else_body {
-                for s in eb { get_read_vars_stmt(s, vars); }
+                for s in eb {
+                    get_read_vars_stmt(s, vars);
+                }
             }
         }
         Stmt::While(cond, body) => {
             crate::optimizer::get_read_vars(cond, vars);
-            for s in body { get_read_vars_stmt(s, vars); }
+            for s in body {
+                get_read_vars_stmt(s, vars);
+            }
         }
         Stmt::For(_, iter, body) => {
             vars.insert(iter.clone());
-            for s in body { get_read_vars_stmt(s, vars); }
+            for s in body {
+                get_read_vars_stmt(s, vars);
+            }
         }
         Stmt::Return(Some(expr)) => {
             crate::optimizer::get_read_vars(expr, vars);

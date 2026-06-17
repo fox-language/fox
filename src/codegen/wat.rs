@@ -1,13 +1,17 @@
-use std::collections::{HashMap, HashSet};
-use super::*;
 use super::intrinsics::*;
+use super::*;
+use std::collections::{HashMap, HashSet};
 
 pub fn generate_default_value_wat(
     expected_ty: &str,
     wat: &mut String,
     structs: &HashMap<String, StructDef>,
 ) {
-    if expected_ty == "i32" || expected_ty == "u32" || expected_ty == "bool" || expected_ty == "byte" {
+    if expected_ty == "i32"
+        || expected_ty == "u32"
+        || expected_ty == "bool"
+        || expected_ty == "byte"
+    {
         wat.push_str("    i32.const 0\n");
     } else if expected_ty == "i64" || expected_ty == "u64" {
         wat.push_str("    i64.const 0\n");
@@ -22,14 +26,23 @@ pub fn generate_default_value_wat(
     } else if expected_ty.starts_with("[]") {
         let inner = &expected_ty[2..];
         let resolved_inner = resolve_struct_name(inner, structs);
-        wat.push_str(&format!("    ref.null $array_{}\n", sanitize_wat_name(&resolved_inner)));
+        wat.push_str(&format!(
+            "    ref.null $array_{}\n",
+            sanitize_wat_name(&resolved_inner)
+        ));
     } else if expected_ty.starts_with("fn(") {
         let fat_name = fn_type_to_wasm_name(expected_ty);
         let sig_name = format!("sig_{}", fat_name);
-        wat.push_str(&format!("    ref.null ${}\n    ref.null any\n    struct.new ${}\n", sig_name, fat_name));
+        wat.push_str(&format!(
+            "    ref.null ${}\n    ref.null any\n    struct.new ${}\n",
+            sig_name, fat_name
+        ));
     } else {
         let resolved = resolve_struct_name(expected_ty, structs);
-        if resolved.starts_with("vec::Vec") || resolved.contains("vec::Vec") || resolved.contains("std_collections_vec_Vec") {
+        if resolved.starts_with("vec::Vec")
+            || resolved.contains("vec::Vec")
+            || resolved.contains("std_collections_vec_Vec")
+        {
             let func_name = format!("{}::new", resolved);
             let safe_func_name = sanitize_wat_name(&func_name);
             wat.push_str(&format!("    call ${}\n", safe_func_name));
@@ -65,7 +78,10 @@ pub fn generate_expr(
                 }
             } else if let Some(resolved) = resolve_const_name(n) {
                 let const_ty = GLOBAL_CONSTS.with(|gc| {
-                    gc.borrow().get(&resolved).cloned().unwrap_or_else(|| "i32".to_string())
+                    gc.borrow()
+                        .get(&resolved)
+                        .cloned()
+                        .unwrap_or_else(|| "i32".to_string())
                 });
                 let safe_name = sanitize_wat_name(&resolved);
                 wat.push_str(&format!("    global.get ${}\n", safe_name));
@@ -135,29 +151,76 @@ pub fn generate_expr(
                         let inner_ty = &obj_ty[2..];
                         let resolved_inner = resolve_struct_name(inner_ty, structs);
                         let array_type_name = sanitize_wat_name(&resolved_inner);
-                        generate_expr(obj, sym, "unknown", wat, funcs, structs, string_lit_ids, loop_idx, varr_depth);
+                        generate_expr(
+                            obj,
+                            sym,
+                            "unknown",
+                            wat,
+                            funcs,
+                            structs,
+                            string_lit_ids,
+                            loop_idx,
+                            varr_depth,
+                        );
                         for (i, arg) in args.iter().enumerate() {
                             let arg_ty = if i < intr.param_wasm_tys.len() {
                                 intr.param_wasm_tys[i]
                             } else {
                                 "unknown"
                             };
-                            generate_expr(arg, sym, arg_ty, wat, funcs, structs, string_lit_ids, loop_idx, varr_depth);
+                            generate_expr(
+                                arg,
+                                sym,
+                                arg_ty,
+                                wat,
+                                funcs,
+                                structs,
+                                string_lit_ids,
+                                loop_idx,
+                                varr_depth,
+                            );
                         }
-                        wat.push_str(&format!("    array.copy $array_{} $array_{}\n", array_type_name, array_type_name));
+                        wat.push_str(&format!(
+                            "    array.copy $array_{} $array_{}\n",
+                            array_type_name, array_type_name
+                        ));
                     } else {
                         // Push self (the receiver), then any extra args, then emit
                         // the opcode. Self's Wasm type is `unknown` for arrays and
                         // matches `obj_ty` for primitives; the array case ignores it.
-                        let self_ty = if obj_ty.starts_with("[]") { "unknown" } else { &obj_ty };
-                        generate_expr(obj, sym, self_ty, wat, funcs, structs, string_lit_ids, loop_idx, varr_depth);
+                        let self_ty = if obj_ty.starts_with("[]") {
+                            "unknown"
+                        } else {
+                            &obj_ty
+                        };
+                        generate_expr(
+                            obj,
+                            sym,
+                            self_ty,
+                            wat,
+                            funcs,
+                            structs,
+                            string_lit_ids,
+                            loop_idx,
+                            varr_depth,
+                        );
                         for (i, arg) in args.iter().enumerate() {
                             let arg_ty = if i < intr.param_wasm_tys.len() {
                                 intr.param_wasm_tys[i]
                             } else {
                                 "unknown"
                             };
-                            generate_expr(arg, sym, arg_ty, wat, funcs, structs, string_lit_ids, loop_idx, varr_depth);
+                            generate_expr(
+                                arg,
+                                sym,
+                                arg_ty,
+                                wat,
+                                funcs,
+                                structs,
+                                string_lit_ids,
+                                loop_idx,
+                                varr_depth,
+                            );
                         }
                         if obj_ty.starts_with("[]") && method == "len" {
                             wat.push_str(&format!("    {}\n", intr.result_wasm));
@@ -171,8 +234,22 @@ pub fn generate_expr(
                 } else {
                     // Import or hand-written Wasm helper. Self is `str`, then
                     // each param gets its declared Wasm type.
-                    let self_ty = if intr.uses_wasm_helper { &obj_ty } else { "str" };
-                    generate_expr(obj, sym, self_ty, wat, funcs, structs, string_lit_ids, loop_idx, varr_depth);
+                    let self_ty = if intr.uses_wasm_helper {
+                        &obj_ty
+                    } else {
+                        "str"
+                    };
+                    generate_expr(
+                        obj,
+                        sym,
+                        self_ty,
+                        wat,
+                        funcs,
+                        structs,
+                        string_lit_ids,
+                        loop_idx,
+                        varr_depth,
+                    );
                     for (i, arg) in args.iter().enumerate() {
                         let arg_ty = if i < intr.param_wasm_tys.len() {
                             match intr.param_wasm_tys[i] {
@@ -183,7 +260,17 @@ pub fn generate_expr(
                         } else {
                             "unknown"
                         };
-                        generate_expr(arg, sym, arg_ty, wat, funcs, structs, string_lit_ids, loop_idx, varr_depth);
+                        generate_expr(
+                            arg,
+                            sym,
+                            arg_ty,
+                            wat,
+                            funcs,
+                            structs,
+                            string_lit_ids,
+                            loop_idx,
+                            varr_depth,
+                        );
                     }
                     let wasm_fn = intr.wasm_fn.expect("import/helper must have wasm_fn");
                     wat.push_str(&format!("    call {}\n", wasm_fn));
@@ -194,7 +281,17 @@ pub fn generate_expr(
 
                 if funcs.contains_key(&actual_name) {
                     // Real method call
-                    generate_expr(obj, sym, &resolved_obj_ty, wat, funcs, structs, string_lit_ids, loop_idx, varr_depth);
+                    generate_expr(
+                        obj,
+                        sym,
+                        &resolved_obj_ty,
+                        wat,
+                        funcs,
+                        structs,
+                        string_lit_ids,
+                        loop_idx,
+                        varr_depth,
+                    );
                     let param_types: Vec<String> = if let Some(f) = funcs.get(&actual_name) {
                         f.params.iter().skip(1).map(|p| p.ty.to_string()).collect()
                     } else {
@@ -202,7 +299,17 @@ pub fn generate_expr(
                     };
                     for (i, arg) in args.iter().enumerate() {
                         let expected = param_types.get(i).map(|s| s.as_str()).unwrap_or("unknown");
-                        generate_expr(arg, sym, expected, wat, funcs, structs, string_lit_ids, loop_idx, varr_depth);
+                        generate_expr(
+                            arg,
+                            sym,
+                            expected,
+                            wat,
+                            funcs,
+                            structs,
+                            string_lit_ids,
+                            loop_idx,
+                            varr_depth,
+                        );
                     }
                     let safe_name = sanitize_wat_name(&actual_name);
                     wat.push_str(&format!("    call ${}\n", safe_name));
@@ -213,11 +320,35 @@ pub fn generate_expr(
                             // Field access + closure call
                             let temp_var = format!("_field_call_{}", *loop_idx);
                             *loop_idx += 1;
-                            generate_expr(obj, sym, &resolved_obj_ty, wat, funcs, structs, string_lit_ids, loop_idx, varr_depth);
-                            wat.push_str(&format!("    struct.get ${} ${}\n", sanitize_wat_name(&resolved_obj_ty), method));
+                            generate_expr(
+                                obj,
+                                sym,
+                                &resolved_obj_ty,
+                                wat,
+                                funcs,
+                                structs,
+                                string_lit_ids,
+                                loop_idx,
+                                varr_depth,
+                            );
+                            wat.push_str(&format!(
+                                "    struct.get ${} ${}\n",
+                                sanitize_wat_name(&resolved_obj_ty),
+                                method
+                            ));
                             wat.push_str(&format!("    local.set ${}\n", temp_var));
                             for arg in args {
-                                generate_expr(arg, sym, "unknown", wat, funcs, structs, string_lit_ids, loop_idx, varr_depth);
+                                generate_expr(
+                                    arg,
+                                    sym,
+                                    "unknown",
+                                    wat,
+                                    funcs,
+                                    structs,
+                                    string_lit_ids,
+                                    loop_idx,
+                                    varr_depth,
+                                );
                             }
                             let fat_name = fn_type_to_wasm_name(&field_ty_str);
                             let sig_name = format!("sig_{}", fat_name);
@@ -227,15 +358,41 @@ pub fn generate_expr(
                             wat.push_str(&format!("    struct.get ${} 0\n", fat_name));
                             wat.push_str(&format!("    call_ref ${}\n", sig_name));
                         } else {
-                            panic!("Cannot call non-function field '{}' on type '{}'", method, resolved_obj_ty);
+                            panic!(
+                                "Cannot call non-function field '{}' on type '{}'",
+                                method, resolved_obj_ty
+                            );
                         }
                     } else {
-                        panic!("No method or callable field '{}' found on type '{}'", method, resolved_obj_ty);
+                        panic!(
+                            "No method or callable field '{}' found on type '{}'",
+                            method, resolved_obj_ty
+                        );
                     }
                 } else {
-                    generate_expr(obj, sym, &resolved_obj_ty, wat, funcs, structs, string_lit_ids, loop_idx, varr_depth);
+                    generate_expr(
+                        obj,
+                        sym,
+                        &resolved_obj_ty,
+                        wat,
+                        funcs,
+                        structs,
+                        string_lit_ids,
+                        loop_idx,
+                        varr_depth,
+                    );
                     for arg in args {
-                        generate_expr(arg, sym, "unknown", wat, funcs, structs, string_lit_ids, loop_idx, varr_depth);
+                        generate_expr(
+                            arg,
+                            sym,
+                            "unknown",
+                            wat,
+                            funcs,
+                            structs,
+                            string_lit_ids,
+                            loop_idx,
+                            varr_depth,
+                        );
                     }
                     let safe_name = sanitize_wat_name(&actual_name);
                     wat.push_str(&format!("    call ${}\n", safe_name));
@@ -250,9 +407,22 @@ pub fn generate_expr(
         }
         Expr::FieldAccess(obj, f_name) => {
             let obj_ty = get_expr_type(obj, sym, funcs, structs);
-            generate_expr(obj, sym, &obj_ty, wat, funcs, structs, string_lit_ids, loop_idx, varr_depth);
+            generate_expr(
+                obj,
+                sym,
+                &obj_ty,
+                wat,
+                funcs,
+                structs,
+                string_lit_ids,
+                loop_idx,
+                varr_depth,
+            );
             if obj_ty.starts_with("[]") {
-                panic!("Field access not supported on array type: {}.{}", obj_ty, f_name);
+                panic!(
+                    "Field access not supported on array type: {}.{}",
+                    obj_ty, f_name
+                );
             }
             let resolved_obj_ty = resolve_struct_name(&obj_ty, structs);
             let wat_field = if obj_ty.starts_with('(') && obj_ty.ends_with(')') {
@@ -260,7 +430,11 @@ pub fn generate_expr(
             } else {
                 f_name.clone()
             };
-            wat.push_str(&format!("    struct.get ${} ${}\n", sanitize_wat_name(&resolved_obj_ty), wat_field));
+            wat.push_str(&format!(
+                "    struct.get ${} ${}\n",
+                sanitize_wat_name(&resolved_obj_ty),
+                wat_field
+            ));
             let actual_ty = get_expr_type(expr, sym, funcs, structs);
             if expected_ty == "anyref" && actual_ty != "anyref" {
                 emit_box_to_anyref(&actual_ty, wat, funcs, structs);
@@ -268,22 +442,61 @@ pub fn generate_expr(
         }
         Expr::IndexAccess(arr, idx) => {
             let ty = get_expr_type(arr, sym, funcs, structs);
-            generate_expr(arr, sym, &ty, wat, funcs, structs, string_lit_ids, loop_idx, varr_depth);
-            generate_expr(idx, sym, "i32", wat, funcs, structs, string_lit_ids, loop_idx, varr_depth);
+            generate_expr(
+                arr,
+                sym,
+                &ty,
+                wat,
+                funcs,
+                structs,
+                string_lit_ids,
+                loop_idx,
+                varr_depth,
+            );
+            generate_expr(
+                idx,
+                sym,
+                "i32",
+                wat,
+                funcs,
+                structs,
+                string_lit_ids,
+                loop_idx,
+                varr_depth,
+            );
             if ty.starts_with("[]") {
                 let inner = &ty[2..];
                 let resolved_inner = resolve_struct_name(inner, structs);
-                wat.push_str(&format!("    array.get $array_{}\n", sanitize_wat_name(&resolved_inner)));
+                wat.push_str(&format!(
+                    "    array.get $array_{}\n",
+                    sanitize_wat_name(&resolved_inner)
+                ));
                 let actual_ty = inner.to_string();
                 if expected_ty == "anyref" && actual_ty != "anyref" {
                     emit_box_to_anyref(&actual_ty, wat, funcs, structs);
                 } else if inner == "i32" || inner == "byte" || inner == "bool" || inner == "u32" {
                     if expected_ty == "i64" || expected_ty == "u64" {
-                        crate::diagnostics::report_error(format!("Type mismatch: expected '{}', found '{}'", expected_ty, inner), None);
+                        crate::diagnostics::report_error(
+                            format!(
+                                "Type mismatch: expected '{}', found '{}'",
+                                expected_ty, inner
+                            ),
+                            None,
+                        );
                     }
                 } else if inner == "i64" || inner == "u64" {
-                    if expected_ty == "i32" || expected_ty == "u32" || expected_ty == "byte" || expected_ty == "bool" {
-                        crate::diagnostics::report_error(format!("Type mismatch: expected '{}', found '{}'", expected_ty, inner), None);
+                    if expected_ty == "i32"
+                        || expected_ty == "u32"
+                        || expected_ty == "byte"
+                        || expected_ty == "bool"
+                    {
+                        crate::diagnostics::report_error(
+                            format!(
+                                "Type mismatch: expected '{}', found '{}'",
+                                expected_ty, inner
+                            ),
+                            None,
+                        );
                     }
                 }
             } else {
@@ -297,10 +510,23 @@ pub fn generate_expr(
                 if args.is_empty() {
                     wat.push_str("    i32.const 0\n");
                 } else {
-                    generate_expr(&args[0], sym, "i32", wat, funcs, structs, string_lit_ids, loop_idx, varr_depth);
+                    generate_expr(
+                        &args[0],
+                        sym,
+                        "i32",
+                        wat,
+                        funcs,
+                        structs,
+                        string_lit_ids,
+                        loop_idx,
+                        varr_depth,
+                    );
                 }
                 let resolved_inner = resolve_struct_name(inner, structs);
-                wat.push_str(&format!("    array.new_default $array_{}\n", sanitize_wat_name(&resolved_inner)));
+                wat.push_str(&format!(
+                    "    array.new_default $array_{}\n",
+                    sanitize_wat_name(&resolved_inner)
+                ));
             } else {
                 panic!("new is only supported for arrays and slices");
             }
@@ -310,7 +536,17 @@ pub fn generate_expr(
             if let Some(s) = structs.get(&resolved_name) {
                 for s_field in &s.fields {
                     if let Some((_, expr)) = fields.iter().find(|(n, _)| n == &s_field.name) {
-                        generate_expr(expr, sym, &s_field.ty.to_string(), wat, funcs, structs, string_lit_ids, loop_idx, varr_depth);
+                        generate_expr(
+                            expr,
+                            sym,
+                            &s_field.ty.to_string(),
+                            wat,
+                            funcs,
+                            structs,
+                            string_lit_ids,
+                            loop_idx,
+                            varr_depth,
+                        );
                     } else {
                         generate_default_value_wat(&s_field.ty.to_string(), wat, structs);
                     }
@@ -318,7 +554,10 @@ pub fn generate_expr(
                 for (fname, fexpr) in fields {
                     if !s.fields.iter().any(|sf| &sf.name == fname) {
                         crate::diagnostics::report_error(
-                            format!("Unknown field '{}' in instantiation of struct '{}'", fname, s_name),
+                            format!(
+                                "Unknown field '{}' in instantiation of struct '{}'",
+                                fname, s_name
+                            ),
                             crate::ast::get_span(fexpr),
                         );
                     }
@@ -339,16 +578,39 @@ pub fn generate_expr(
                 if ty.starts_with("fn(") {
                     let var_expr = Expr::Identifier(name.clone());
                     let invoke_expr = Expr::InvokeFuncPtr(Box::new(var_expr), args.clone());
-                    generate_expr(&invoke_expr, sym, expected_ty, wat, funcs, structs, string_lit_ids, loop_idx, varr_depth);
+                    generate_expr(
+                        &invoke_expr,
+                        sym,
+                        expected_ty,
+                        wat,
+                        funcs,
+                        structs,
+                        string_lit_ids,
+                        loop_idx,
+                        varr_depth,
+                    );
                     return;
                 }
             }
-            emit_call(name, args, sym, wat, funcs, structs, string_lit_ids, loop_idx, varr_depth, false, expected_ty);
+            emit_call(
+                name,
+                args,
+                sym,
+                wat,
+                funcs,
+                structs,
+                string_lit_ids,
+                loop_idx,
+                varr_depth,
+                false,
+                expected_ty,
+            );
             let mut arg_types = Vec::new();
             for arg in args {
                 arg_types.push(get_expr_type(arg, sym, funcs, structs));
             }
-            let actual_func_name = resolve_func_name_with_expected(name, &arg_types, expected_ty, funcs, structs);
+            let actual_func_name =
+                resolve_func_name_with_expected(name, &arg_types, expected_ty, funcs, structs);
             let actual_ty = if let Some(f) = funcs.get(&actual_func_name) {
                 f.return_ty.to_string()
             } else {
@@ -360,46 +622,100 @@ pub fn generate_expr(
             let (then_stmts, then_val) = &**then_b;
             let current_loop_idx = *loop_idx;
             *loop_idx += 1;
-            
+
             let temp_var = format!("_if_val{}", current_loop_idx);
             let res_var = format!("_if_res{}", current_loop_idx);
-            
+
             let has_value = then_val.is_some();
-            
+
             let match_end = format!("_if_end{}", current_loop_idx);
             let else_label = format!("_if_else{}", current_loop_idx);
 
             wat.push_str(&format!("    block ${}\n", match_end));
             wat.push_str(&format!("    block ${}\n", else_label));
-            
+
             let cond_ty = get_expr_type(cond, sym, funcs, structs);
             if cond_ty != "bool" {
                 panic!("if condition must be a boolean");
             }
-            generate_expr(cond, sym, "bool", wat, funcs, structs, string_lit_ids, loop_idx, varr_depth);
+            generate_expr(
+                cond,
+                sym,
+                "bool",
+                wat,
+                funcs,
+                structs,
+                string_lit_ids,
+                loop_idx,
+                varr_depth,
+            );
             wat.push_str("    i32.eqz\n");
             wat.push_str(&format!("    br_if ${}\n", else_label));
-            
-            for s in then_stmts { generate_stmt(s, sym, expected_ty, loop_idx, wat, funcs, structs, string_lit_ids, varr_depth); }
+
+            for s in then_stmts {
+                generate_stmt(
+                    s,
+                    sym,
+                    expected_ty,
+                    loop_idx,
+                    wat,
+                    funcs,
+                    structs,
+                    string_lit_ids,
+                    varr_depth,
+                );
+            }
             if let Some(v) = then_val {
-                generate_expr(v, sym, expected_ty, wat, funcs, structs, string_lit_ids, loop_idx, varr_depth);
+                generate_expr(
+                    v,
+                    sym,
+                    expected_ty,
+                    wat,
+                    funcs,
+                    structs,
+                    string_lit_ids,
+                    loop_idx,
+                    varr_depth,
+                );
                 wat.push_str(&format!("    local.set ${}\n", temp_var));
                 wat.push_str(&format!("    i32.const 1\n    local.set ${}\n", res_var));
             }
             wat.push_str(&format!("    br ${}\n", match_end));
-            
+
             wat.push_str("    end\n");
             if let Some(else_block) = else_b {
                 let (else_stmts, else_val) = &**else_block;
-                for s in else_stmts { generate_stmt(s, sym, expected_ty, loop_idx, wat, funcs, structs, string_lit_ids, varr_depth); }
+                for s in else_stmts {
+                    generate_stmt(
+                        s,
+                        sym,
+                        expected_ty,
+                        loop_idx,
+                        wat,
+                        funcs,
+                        structs,
+                        string_lit_ids,
+                        varr_depth,
+                    );
+                }
                 if let Some(v) = else_val {
-                    generate_expr(v, sym, expected_ty, wat, funcs, structs, string_lit_ids, loop_idx, varr_depth);
+                    generate_expr(
+                        v,
+                        sym,
+                        expected_ty,
+                        wat,
+                        funcs,
+                        structs,
+                        string_lit_ids,
+                        loop_idx,
+                        varr_depth,
+                    );
                     wat.push_str(&format!("    local.set ${}\n", temp_var));
                     wat.push_str(&format!("    i32.const 1\n    local.set ${}\n", res_var));
                 }
             }
             wat.push_str("    end\n");
-            
+
             if has_value {
                 wat.push_str(&format!("    local.get ${}\n", temp_var));
             }
@@ -416,7 +732,17 @@ pub fn generate_expr(
             let current_loop_idx = *loop_idx;
             *loop_idx += 1;
 
-            generate_expr(target, sym, &opt_ty, wat, funcs, structs, string_lit_ids, loop_idx, varr_depth);
+            generate_expr(
+                target,
+                sym,
+                &opt_ty,
+                wat,
+                funcs,
+                structs,
+                string_lit_ids,
+                loop_idx,
+                varr_depth,
+            );
             wat.push_str(&format!("    local.set ${}\n", temp_var));
 
             let match_end = format!("_match_end{}", current_loop_idx);
@@ -424,17 +750,40 @@ pub fn generate_expr(
 
             wat.push_str(&format!("    block ${}\n", match_end));
             for i in (0..arms.len()).rev() {
-                wat.push_str(&format!("    block $_match_arm_{}_{}\n", current_loop_idx, i));
+                wat.push_str(&format!(
+                    "    block $_match_arm_{}_{}\n",
+                    current_loop_idx, i
+                ));
             }
 
             for (i, arm) in arms.iter().enumerate() {
                 if let MatchPattern::CatchAll = arm.pattern {
                     for bstmt in &arm.body {
-                        generate_stmt(bstmt, sym, expected_ty, loop_idx, wat, funcs, structs, string_lit_ids, varr_depth);
+                        generate_stmt(
+                            bstmt,
+                            sym,
+                            expected_ty,
+                            loop_idx,
+                            wat,
+                            funcs,
+                            structs,
+                            string_lit_ids,
+                            varr_depth,
+                        );
                     }
                     if let Some(v) = &arm.val {
                         let vt = get_expr_type(v, sym, funcs, structs);
-                        generate_expr(v, sym, &vt, wat, funcs, structs, string_lit_ids, loop_idx, varr_depth);
+                        generate_expr(
+                            v,
+                            sym,
+                            &vt,
+                            wat,
+                            funcs,
+                            structs,
+                            string_lit_ids,
+                            loop_idx,
+                            varr_depth,
+                        );
                         if has_value {
                             wat.push_str(&format!("    local.set ${}\n", res_var));
                         } else if vt != "void" {
@@ -451,7 +800,9 @@ pub fn generate_expr(
                     MatchPattern::None => ("None".to_string(), vec![]),
                     MatchPattern::Ok(v) => ("Ok".to_string(), vec![v.clone()]),
                     MatchPattern::Err(v) => ("Err".to_string(), vec![v.clone()]),
-                    MatchPattern::Variant(name, binds) => (name.rsplit("::").next().unwrap().to_string(), binds.clone()),
+                    MatchPattern::Variant(name, binds) => {
+                        (name.rsplit("::").next().unwrap().to_string(), binds.clone())
+                    }
                     MatchPattern::CatchAll => unreachable!(),
                 };
 
@@ -459,29 +810,67 @@ pub fn generate_expr(
                     panic!("Enum '{}' not found in structs map", resolved_obj_ty);
                 });
 
-                let tag_val = s_def.variants.iter().position(|v| v == &variant_name).unwrap_or_else(|| {
-                    panic!("Variant '{}' not found in enum '{}'", variant_name, resolved_obj_ty);
-                });
+                let tag_val = s_def
+                    .variants
+                    .iter()
+                    .position(|v| v == &variant_name)
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "Variant '{}' not found in enum '{}'",
+                            variant_name, resolved_obj_ty
+                        );
+                    });
 
                 wat.push_str(&format!("    local.get ${}\n", temp_var));
-                wat.push_str(&format!("    struct.get ${} $_tag\n", sanitize_wat_name(&resolved_obj_ty)));
+                wat.push_str(&format!(
+                    "    struct.get ${} $_tag\n",
+                    sanitize_wat_name(&resolved_obj_ty)
+                ));
                 wat.push_str(&format!("    i32.const {}\n", tag_val));
                 wat.push_str("    i32.ne\n");
-                wat.push_str(&format!("    br_if $_match_arm_{}_{}\n", current_loop_idx, i));
+                wat.push_str(&format!(
+                    "    br_if $_match_arm_{}_{}\n",
+                    current_loop_idx, i
+                ));
 
                 for (j, binding_name) in bindings.iter().enumerate() {
                     wat.push_str(&format!("    local.get ${}\n", temp_var));
-                    wat.push_str(&format!("    struct.get ${} ${}_{}\n", sanitize_wat_name(&resolved_obj_ty), variant_name, j));
+                    wat.push_str(&format!(
+                        "    struct.get ${} ${}_{}\n",
+                        sanitize_wat_name(&resolved_obj_ty),
+                        variant_name,
+                        j
+                    ));
                     wat.push_str(&format!("    local.set ${}\n", binding_name));
                 }
 
                 for bstmt in &arm.body {
-                    generate_stmt(bstmt, sym, expected_ty, loop_idx, wat, funcs, structs, string_lit_ids, varr_depth);
+                    generate_stmt(
+                        bstmt,
+                        sym,
+                        expected_ty,
+                        loop_idx,
+                        wat,
+                        funcs,
+                        structs,
+                        string_lit_ids,
+                        varr_depth,
+                    );
                 }
 
                 if let Some(v) = &arm.val {
                     let vt = get_expr_type(v, sym, funcs, structs);
-                    generate_expr(v, sym, &vt, wat, funcs, structs, string_lit_ids, loop_idx, varr_depth);
+                    generate_expr(
+                        v,
+                        sym,
+                        &vt,
+                        wat,
+                        funcs,
+                        structs,
+                        string_lit_ids,
+                        loop_idx,
+                        varr_depth,
+                    );
                     if has_value {
                         wat.push_str(&format!("    local.set ${}\n", res_var));
                     } else if vt != "void" {
@@ -513,8 +902,28 @@ pub fn generate_expr(
             } else {
                 l_ty
             };
-            generate_expr(l, sym, &ty, wat, funcs, structs, string_lit_ids, loop_idx, varr_depth);
-            generate_expr(r, sym, &ty, wat, funcs, structs, string_lit_ids, loop_idx, varr_depth);
+            generate_expr(
+                l,
+                sym,
+                &ty,
+                wat,
+                funcs,
+                structs,
+                string_lit_ids,
+                loop_idx,
+                varr_depth,
+            );
+            generate_expr(
+                r,
+                sym,
+                &ty,
+                wat,
+                funcs,
+                structs,
+                string_lit_ids,
+                loop_idx,
+                varr_depth,
+            );
 
             let is_ref = ty == "str" || ty.starts_with("[]") || structs.contains_key(&ty);
             let result_ty = if is_ref && (*op == Op::EqualEqual || *op == Op::NotEqual) {
@@ -605,7 +1014,15 @@ pub fn generate_expr(
                     }
                 };
                 wat.push_str(&format!("    {}.{}\n", map_wasm_ty(&ty, structs), op_str));
-                if matches!(op, Op::Less | Op::LessEqual | Op::Greater | Op::GreaterEqual | Op::EqualEqual | Op::NotEqual) {
+                if matches!(
+                    op,
+                    Op::Less
+                        | Op::LessEqual
+                        | Op::Greater
+                        | Op::GreaterEqual
+                        | Op::EqualEqual
+                        | Op::NotEqual
+                ) {
                     "bool".to_string()
                 } else {
                     ty
@@ -636,13 +1053,26 @@ pub fn generate_expr(
                 } else {
                     "anyref"
                 };
-                generate_expr(e, sym, expected_field_ty, &mut new_wat, funcs, structs, string_lit_ids, loop_idx, varr_depth);
+                generate_expr(
+                    e,
+                    sym,
+                    expected_field_ty,
+                    &mut new_wat,
+                    funcs,
+                    structs,
+                    string_lit_ids,
+                    loop_idx,
+                    varr_depth,
+                );
             }
             new_wat.push_str(&format!("    struct.new ${}\n", env_name));
-            
+
             let func_def = funcs.get(func_name).unwrap_or_else(|| {
                 eprintln!("Could not find closure func: {}", func_name);
-                eprintln!("Available functions: {:?}", funcs.keys().collect::<Vec<_>>());
+                eprintln!(
+                    "Available functions: {:?}",
+                    funcs.keys().collect::<Vec<_>>()
+                );
                 panic!("Could not find closure func: {}", func_name);
             });
             let mut params_str = Vec::new();
@@ -659,46 +1089,82 @@ pub fn generate_expr(
         Expr::InvokeFuncPtr(func_expr, args) => {
             let temp_var = format!("_invoke_ptr_{}", *loop_idx);
             *loop_idx += 1;
-            
+
             let mut invoke_wat = String::new();
             let func_ty = get_expr_type(func_expr, sym, funcs, structs);
-            generate_expr(func_expr, sym, &func_ty, &mut invoke_wat, funcs, structs, string_lit_ids, loop_idx, varr_depth);
+            generate_expr(
+                func_expr,
+                sym,
+                &func_ty,
+                &mut invoke_wat,
+                funcs,
+                structs,
+                string_lit_ids,
+                loop_idx,
+                varr_depth,
+            );
             invoke_wat.push_str(&format!("    local.set ${}\n", temp_var));
-            
+
             for a in args {
-                generate_expr(a, sym, "unknown", &mut invoke_wat, funcs, structs, string_lit_ids, loop_idx, varr_depth);
+                generate_expr(
+                    a,
+                    sym,
+                    "unknown",
+                    &mut invoke_wat,
+                    funcs,
+                    structs,
+                    string_lit_ids,
+                    loop_idx,
+                    varr_depth,
+                );
             }
-            
+
             let fat_name = fn_type_to_wasm_name(&func_ty);
             let sig_name = format!("sig_{}", fat_name);
-            
+
             invoke_wat.push_str(&format!("    local.get ${}\n", temp_var));
             invoke_wat.push_str(&format!("    struct.get ${} 1\n", fat_name));
-            
+
             invoke_wat.push_str(&format!("    local.get ${}\n", temp_var));
             invoke_wat.push_str(&format!("    struct.get ${} 0\n", fat_name));
             invoke_wat.push_str(&format!("    call_ref ${}\n", sig_name));
-            
+
             wat.push_str(&invoke_wat);
-            
+
             let mut return_ty = "void".to_string();
             if func_ty.starts_with("fn(") {
                 let inner = &func_ty[3..];
                 if let Some(idx) = inner.find("):") {
-                    return_ty = inner[idx+2..].to_string();
+                    return_ty = inner[idx + 2..].to_string();
                 }
             }
             emit_widening(wat, &return_ty, expected_ty, structs);
         }
         Expr::Cast(e, target_ty) => {
             let actual_ty = get_expr_type(e, sym, funcs, structs);
-            generate_expr(e, sym, &actual_ty, wat, funcs, structs, string_lit_ids, loop_idx, varr_depth);
-            
+            generate_expr(
+                e,
+                sym,
+                &actual_ty,
+                wat,
+                funcs,
+                structs,
+                string_lit_ids,
+                loop_idx,
+                varr_depth,
+            );
+
             let target_ty_str = target_ty.to_string();
             let is_actual_64 = actual_ty == "i64" || actual_ty == "u64";
             let is_target_64 = target_ty_str == "i64" || target_ty_str == "u64";
-            let is_actual_32 = actual_ty == "i32" || actual_ty == "u32" || actual_ty == "byte" || actual_ty == "bool";
-            let is_target_32 = target_ty_str == "i32" || target_ty_str == "u32" || target_ty_str == "byte" || target_ty_str == "bool";
+            let is_actual_32 = actual_ty == "i32"
+                || actual_ty == "u32"
+                || actual_ty == "byte"
+                || actual_ty == "bool";
+            let is_target_32 = target_ty_str == "i32"
+                || target_ty_str == "u32"
+                || target_ty_str == "byte"
+                || target_ty_str == "bool";
 
             if is_target_64 && is_actual_32 {
                 wat.push_str("    i64.extend_i32_s\n");
@@ -708,21 +1174,46 @@ pub fn generate_expr(
                 if actual_ty != "anyref" {
                     emit_box_to_anyref(&actual_ty, wat, funcs, structs);
                 }
-            } else if structs.contains_key(&target_ty_str) || target_ty_str.starts_with("[]") || target_ty_str.starts_with("fn(") {
+            } else if structs.contains_key(&target_ty_str)
+                || target_ty_str.starts_with("[]")
+                || target_ty_str.starts_with("fn(")
+            {
                 let wasm_ty = map_wasm_ty(&target_ty_str, structs);
                 wat.push_str(&format!("    ref.cast {}\n", wasm_ty));
             }
         }
         Expr::Spread(e) => {
-            generate_expr(e, sym, expected_ty, wat, funcs, structs, string_lit_ids, loop_idx, varr_depth);
+            generate_expr(
+                e,
+                sym,
+                expected_ty,
+                wat,
+                funcs,
+                structs,
+                string_lit_ids,
+                loop_idx,
+                varr_depth,
+            );
         }
         Expr::Tuple(exprs) => {
             let tuple_ty = get_expr_type(expr, sym, funcs, structs);
             let resolved_name = resolve_struct_name(&tuple_ty, structs);
-            let s = structs.get(&resolved_name).unwrap_or_else(|| panic!("Tuple struct definition not found for: {}", tuple_ty));
+            let s = structs
+                .get(&resolved_name)
+                .unwrap_or_else(|| panic!("Tuple struct definition not found for: {}", tuple_ty));
             for (idx, e) in exprs.iter().enumerate() {
                 let s_field = &s.fields[idx];
-                generate_expr(e, sym, &s_field.ty.to_string(), wat, funcs, structs, string_lit_ids, loop_idx, varr_depth);
+                generate_expr(
+                    e,
+                    sym,
+                    &s_field.ty.to_string(),
+                    wat,
+                    funcs,
+                    structs,
+                    string_lit_ids,
+                    loop_idx,
+                    varr_depth,
+                );
             }
             wat.push_str(&format!(
                 "    struct.new ${}\n",
@@ -731,7 +1222,10 @@ pub fn generate_expr(
         }
         Expr::MapLit(pairs) => {
             let mut map_ty = get_expr_type(expr, sym, funcs, structs);
-            if expected_ty.starts_with("Map<") || expected_ty.starts_with("Map_") || expected_ty.contains("Map") {
+            if expected_ty.starts_with("Map<")
+                || expected_ty.starts_with("Map_")
+                || expected_ty.contains("Map")
+            {
                 map_ty = expected_ty.to_string();
             }
             let (k_ty, v_ty) = if let Some(start) = map_ty.find('<') {
@@ -776,8 +1270,28 @@ pub fn generate_expr(
 
             for (k, v) in pairs {
                 wat.push_str(&format!("    local.get ${}\n", temp_var));
-                generate_expr(k, sym, &k_ty, wat, funcs, structs, string_lit_ids, loop_idx, varr_depth);
-                generate_expr(v, sym, &v_ty, wat, funcs, structs, string_lit_ids, loop_idx, varr_depth);
+                generate_expr(
+                    k,
+                    sym,
+                    &k_ty,
+                    wat,
+                    funcs,
+                    structs,
+                    string_lit_ids,
+                    loop_idx,
+                    varr_depth,
+                );
+                generate_expr(
+                    v,
+                    sym,
+                    &v_ty,
+                    wat,
+                    funcs,
+                    structs,
+                    string_lit_ids,
+                    loop_idx,
+                    varr_depth,
+                );
                 wat.push_str(&format!("    call ${}\n", sanitized_set_fn));
             }
 
@@ -785,7 +1299,10 @@ pub fn generate_expr(
         }
         Expr::VecLit(elems) => {
             let mut vec_ty = get_expr_type(expr, sym, funcs, structs);
-            if expected_ty.starts_with("Vec<") || expected_ty.starts_with("Vec_") || expected_ty.contains("Vec") {
+            if expected_ty.starts_with("Vec<")
+                || expected_ty.starts_with("Vec_")
+                || expected_ty.contains("Vec")
+            {
                 vec_ty = expected_ty.to_string();
             }
             let el_ty = if let Some(start) = vec_ty.find('<') {
@@ -832,7 +1349,17 @@ pub fn generate_expr(
 
                 for el in elems {
                     wat.push_str(&format!("    local.get ${}\n", temp_var));
-                    generate_expr(el, sym, &el_ty, wat, funcs, structs, string_lit_ids, loop_idx, varr_depth);
+                    generate_expr(
+                        el,
+                        sym,
+                        &el_ty,
+                        wat,
+                        funcs,
+                        structs,
+                        string_lit_ids,
+                        loop_idx,
+                        varr_depth,
+                    );
                     wat.push_str(&format!("    call ${}\n", sanitized_push_fn));
                 }
             }
@@ -863,7 +1390,10 @@ pub fn emit_variadic_packing(
     let resolved_target = resolve_struct_name(target_ty, structs);
     let sanitized_target = sanitize_wat_name(&resolved_target);
     wat.push_str(&format!("    i32.const {}\n", n_variadic));
-    wat.push_str(&format!("    array.new_default $array_{}\n", sanitized_target));
+    wat.push_str(&format!(
+        "    array.new_default $array_{}\n",
+        sanitized_target
+    ));
     wat.push_str(&format!("    local.set ${}\n", tmp_name));
 
     for (i, arg) in variadic_args.iter().enumerate() {
@@ -871,7 +1401,17 @@ pub fn emit_variadic_packing(
         // Push the array, then idx, then the boxed value, then array.set
         wat.push_str(&format!("    local.get ${}\n", tmp_name));
         wat.push_str(&format!("    i32.const {}\n", i));
-        generate_expr(arg, sym, &arg_ty, wat, funcs, structs, string_lit_ids, loop_idx, varr_depth);
+        generate_expr(
+            arg,
+            sym,
+            &arg_ty,
+            wat,
+            funcs,
+            structs,
+            string_lit_ids,
+            loop_idx,
+            varr_depth,
+        );
         if target_ty == "anyref" {
             emit_box_to_anyref(&arg_ty, wat, funcs, structs);
         }
@@ -949,17 +1489,23 @@ pub fn emit_call(
     for arg in args {
         arg_types.push(get_expr_type(arg, sym, funcs, structs));
     }
-    let mut actual_name = resolve_func_name_with_expected(name, &arg_types, expected_ret_ty, funcs, structs);
+    let mut actual_name =
+        resolve_func_name_with_expected(name, &arg_types, expected_ret_ty, funcs, structs);
     // If the resolved name isn't in funcs, search for a matching key by suffix
     if !funcs.contains_key(&actual_name) {
         let base = if let Some(start) = actual_name.find('<') {
             let end = actual_name.rfind('>').unwrap_or(start);
-            format!("{}{}", &actual_name[..start], &actual_name[end+1..])
+            format!("{}{}", &actual_name[..start], &actual_name[end + 1..])
         } else {
             actual_name.clone()
         };
-        let candidates: Vec<&String> = funcs.keys().filter(|k| k.ends_with(&format!("::{}", base)) || **k == base).collect();
-        if let Some(best) = pick_best_candidate(candidates, &arg_types, expected_ret_ty, funcs, structs) {
+        let candidates: Vec<&String> = funcs
+            .keys()
+            .filter(|k| k.ends_with(&format!("::{}", base)) || **k == base)
+            .collect();
+        if let Some(best) =
+            pick_best_candidate(candidates, &arg_types, expected_ret_ty, funcs, structs)
+        {
             actual_name = best.clone();
         }
     }
@@ -979,7 +1525,17 @@ pub fn emit_call(
 
     for (i, arg) in args.iter().take(fixed_arity).enumerate() {
         let expected = param_types.get(i).map(|s| s.as_str()).unwrap_or("unknown");
-        generate_expr(arg, sym, expected, wat, funcs, structs, string_lit_ids, loop_idx, varr_depth);
+        generate_expr(
+            arg,
+            sym,
+            expected,
+            wat,
+            funcs,
+            structs,
+            string_lit_ids,
+            loop_idx,
+            varr_depth,
+        );
     }
 
     if is_variadic {
@@ -987,14 +1543,44 @@ pub fn emit_call(
         if variadic_args.len() == 1 {
             if let Expr::Spread(ref e) = variadic_args[0] {
                 let target_ty = target_func.unwrap().params.last().unwrap().ty.to_string();
-                generate_expr(e, sym, &format!("[]{}", target_ty), wat, funcs, structs, string_lit_ids, loop_idx, varr_depth);
+                generate_expr(
+                    e,
+                    sym,
+                    &format!("[]{}", target_ty),
+                    wat,
+                    funcs,
+                    structs,
+                    string_lit_ids,
+                    loop_idx,
+                    varr_depth,
+                );
             } else {
                 let target_ty = target_func.unwrap().params.last().unwrap().ty.to_string();
-                emit_variadic_packing(&variadic_args, varr_depth, sym, wat, funcs, structs, string_lit_ids, loop_idx, &target_ty);
+                emit_variadic_packing(
+                    &variadic_args,
+                    varr_depth,
+                    sym,
+                    wat,
+                    funcs,
+                    structs,
+                    string_lit_ids,
+                    loop_idx,
+                    &target_ty,
+                );
             }
         } else {
             let target_ty = target_func.unwrap().params.last().unwrap().ty.to_string();
-            emit_variadic_packing(&variadic_args, varr_depth, sym, wat, funcs, structs, string_lit_ids, loop_idx, &target_ty);
+            emit_variadic_packing(
+                &variadic_args,
+                varr_depth,
+                sym,
+                wat,
+                funcs,
+                structs,
+                string_lit_ids,
+                loop_idx,
+                &target_ty,
+            );
         }
     }
 
@@ -1014,7 +1600,11 @@ pub fn emit_call(
     }
 
     let safe_name = sanitize_wat_name(&actual_name);
-    let call_instr = if is_return_call { "return_call" } else { "call" };
+    let call_instr = if is_return_call {
+        "return_call"
+    } else {
+        "call"
+    };
     wat.push_str(&format!("    {} ${}\n", call_instr, safe_name));
 }
 
@@ -1030,25 +1620,37 @@ pub fn has_variadic_call_stmt(
         Stmt::ExprStmt(e) => has_variadic_call_expr(e, sym, funcs, structs),
         Stmt::Return(Some(e)) => has_variadic_call_expr(e, sym, funcs, structs),
         Stmt::Return(None) => false,
-        Stmt::Assign(_, e) | Stmt::AssignPlus(_, e) => has_variadic_call_expr(e, sym, funcs, structs),
+        Stmt::Assign(_, e) | Stmt::AssignPlus(_, e) => {
+            has_variadic_call_expr(e, sym, funcs, structs)
+        }
         Stmt::AssignIndex(a, i, v) => {
             has_variadic_call_expr(a, sym, funcs, structs)
                 || has_variadic_call_expr(i, sym, funcs, structs)
                 || has_variadic_call_expr(v, sym, funcs, structs)
         }
         Stmt::AssignField(o, _, v) => {
-            has_variadic_call_expr(o, sym, funcs, structs) || has_variadic_call_expr(v, sym, funcs, structs)
+            has_variadic_call_expr(o, sym, funcs, structs)
+                || has_variadic_call_expr(v, sym, funcs, structs)
         }
         Stmt::If(c, t, e) => {
             has_variadic_call_expr(c, sym, funcs, structs)
-                || t.iter().any(|s| has_variadic_call_stmt(s, sym, funcs, structs))
-                || e.as_ref().map(|eb| eb.iter().any(|s| has_variadic_call_stmt(s, sym, funcs, structs))).unwrap_or(false)
+                || t.iter()
+                    .any(|s| has_variadic_call_stmt(s, sym, funcs, structs))
+                || e.as_ref()
+                    .map(|eb| {
+                        eb.iter()
+                            .any(|s| has_variadic_call_stmt(s, sym, funcs, structs))
+                    })
+                    .unwrap_or(false)
         }
         Stmt::While(c, b) => {
             has_variadic_call_expr(c, sym, funcs, structs)
-                || b.iter().any(|s| has_variadic_call_stmt(s, sym, funcs, structs))
+                || b.iter()
+                    .any(|s| has_variadic_call_stmt(s, sym, funcs, structs))
         }
-        Stmt::For(_, _, b) => b.iter().any(|s| has_variadic_call_stmt(s, sym, funcs, structs)),
+        Stmt::For(_, _, b) => b
+            .iter()
+            .any(|s| has_variadic_call_stmt(s, sym, funcs, structs)),
     }
 }
 
@@ -1070,41 +1672,80 @@ pub fn has_variadic_call_expr(
                     return true;
                 }
             }
-            args.iter().any(|a| has_variadic_call_expr(a, sym, funcs, structs))
+            args.iter()
+                .any(|a| has_variadic_call_expr(a, sym, funcs, structs))
         }
-        Expr::Binary(l, _, r) => has_variadic_call_expr(l, sym, funcs, structs) || has_variadic_call_expr(r, sym, funcs, structs),
+        Expr::Binary(l, _, r) => {
+            has_variadic_call_expr(l, sym, funcs, structs)
+                || has_variadic_call_expr(r, sym, funcs, structs)
+        }
         Expr::MethodCall(o, _, args) => {
             has_variadic_call_expr(o, sym, funcs, structs)
-                || args.iter().any(|a| has_variadic_call_expr(a, sym, funcs, structs))
+                || args
+                    .iter()
+                    .any(|a| has_variadic_call_expr(a, sym, funcs, structs))
         }
         Expr::FieldAccess(o, _) => has_variadic_call_expr(o, sym, funcs, structs),
         Expr::IndexAccess(a, i) => {
-            has_variadic_call_expr(a, sym, funcs, structs) || has_variadic_call_expr(i, sym, funcs, structs)
+            has_variadic_call_expr(a, sym, funcs, structs)
+                || has_variadic_call_expr(i, sym, funcs, structs)
         }
-        Expr::StructInit(_, fs) => fs.iter().any(|(_, e)| has_variadic_call_expr(e, sym, funcs, structs)),
-        Expr::New(_, args) => args.iter().any(|a| has_variadic_call_expr(a, sym, funcs, structs)),
+        Expr::StructInit(_, fs) => fs
+            .iter()
+            .any(|(_, e)| has_variadic_call_expr(e, sym, funcs, structs)),
+        Expr::New(_, args) => args
+            .iter()
+            .any(|a| has_variadic_call_expr(a, sym, funcs, structs)),
         Expr::If(cond, then_b, else_b) => {
-            has_variadic_call_expr(cond, sym, funcs, structs) || {
-                let (t_stmts, t_val) = &**then_b;
-                t_stmts.iter().any(|s| has_variadic_call_stmt(s, sym, funcs, structs)) ||
-                t_val.as_ref().map(|v| has_variadic_call_expr(v, sym, funcs, structs)).unwrap_or(false)
-            } || else_b.as_ref().map(|eb| {
-                let (e_stmts, e_val) = &**eb;
-                e_stmts.iter().any(|s| has_variadic_call_stmt(s, sym, funcs, structs)) ||
-                e_val.as_ref().map(|v| has_variadic_call_expr(v, sym, funcs, structs)).unwrap_or(false)
-            }).unwrap_or(false)
+            has_variadic_call_expr(cond, sym, funcs, structs)
+                || {
+                    let (t_stmts, t_val) = &**then_b;
+                    t_stmts
+                        .iter()
+                        .any(|s| has_variadic_call_stmt(s, sym, funcs, structs))
+                        || t_val
+                            .as_ref()
+                            .map(|v| has_variadic_call_expr(v, sym, funcs, structs))
+                            .unwrap_or(false)
+                }
+                || else_b
+                    .as_ref()
+                    .map(|eb| {
+                        let (e_stmts, e_val) = &**eb;
+                        e_stmts
+                            .iter()
+                            .any(|s| has_variadic_call_stmt(s, sym, funcs, structs))
+                            || e_val
+                                .as_ref()
+                                .map(|v| has_variadic_call_expr(v, sym, funcs, structs))
+                                .unwrap_or(false)
+                    })
+                    .unwrap_or(false)
         }
         Expr::Match(target, arms) => {
             has_variadic_call_expr(target, sym, funcs, structs)
                 || arms.iter().any(|arm| {
-                    arm.body.iter().any(|s| has_variadic_call_stmt(s, sym, funcs, structs))
-                        || arm.val.as_ref().map(|v| has_variadic_call_expr(v, sym, funcs, structs)).unwrap_or(false)
+                    arm.body
+                        .iter()
+                        .any(|s| has_variadic_call_stmt(s, sym, funcs, structs))
+                        || arm
+                            .val
+                            .as_ref()
+                            .map(|v| has_variadic_call_expr(v, sym, funcs, structs))
+                            .unwrap_or(false)
                 })
         }
         Expr::Spread(e) => has_variadic_call_expr(e, sym, funcs, structs),
-        Expr::Tuple(exprs) => exprs.iter().any(|e| has_variadic_call_expr(e, sym, funcs, structs)),
-        Expr::MapLit(pairs) => pairs.iter().any(|(k, v)| has_variadic_call_expr(k, sym, funcs, structs) || has_variadic_call_expr(v, sym, funcs, structs)),
-        Expr::VecLit(elems) => elems.iter().any(|e| has_variadic_call_expr(e, sym, funcs, structs)),
+        Expr::Tuple(exprs) => exprs
+            .iter()
+            .any(|e| has_variadic_call_expr(e, sym, funcs, structs)),
+        Expr::MapLit(pairs) => pairs.iter().any(|(k, v)| {
+            has_variadic_call_expr(k, sym, funcs, structs)
+                || has_variadic_call_expr(v, sym, funcs, structs)
+        }),
+        Expr::VecLit(elems) => elems
+            .iter()
+            .any(|e| has_variadic_call_expr(e, sym, funcs, structs)),
         _ => false,
     }
 }
@@ -1125,7 +1766,9 @@ pub fn scan_locals_expr(
 
             let (then_stmts, then_val) = &**then_b;
             scan_locals_expr(cond, sym, locals, loop_idx, funcs, structs);
-            for s in then_stmts { scan_locals(s, sym, locals, loop_idx, funcs, structs); }
+            for s in then_stmts {
+                scan_locals(s, sym, locals, loop_idx, funcs, structs);
+            }
             if let Some(v) = then_val {
                 scan_locals_expr(v, sym, locals, loop_idx, funcs, structs);
                 let ty = get_expr_type(v, sym, funcs, structs);
@@ -1140,8 +1783,12 @@ pub fn scan_locals_expr(
             }
             if let Some(eb) = else_b {
                 let (else_stmts, else_val) = &**eb;
-                for s in else_stmts { scan_locals(s, sym, locals, loop_idx, funcs, structs); }
-                if let Some(v) = else_val { scan_locals_expr(v, sym, locals, loop_idx, funcs, structs); }
+                for s in else_stmts {
+                    scan_locals(s, sym, locals, loop_idx, funcs, structs);
+                }
+                if let Some(v) = else_val {
+                    scan_locals_expr(v, sym, locals, loop_idx, funcs, structs);
+                }
             }
         }
         Expr::Match(target, arms) => {
@@ -1162,7 +1809,11 @@ pub fn scan_locals_expr(
 
             let has_value = !arms.is_empty() && arms.iter().all(|a| a.val.is_some());
             if has_value {
-                if let Some(vt) = arms.iter().find_map(|a| a.val.as_ref().map(|v| get_expr_type(v, sym, funcs, structs))) {
+                if let Some(vt) = arms.iter().find_map(|a| {
+                    a.val
+                        .as_ref()
+                        .map(|v| get_expr_type(v, sym, funcs, structs))
+                }) {
                     if !sym.contains_key(&res_var) {
                         sym.insert(res_var.clone(), vt.clone());
                         locals.push((res_var, vt));
@@ -1191,7 +1842,9 @@ pub fn scan_locals_expr(
                     MatchPattern::None => ("None".to_string(), vec![]),
                     MatchPattern::Ok(v) => ("Ok".to_string(), vec![v.clone()]),
                     MatchPattern::Err(v) => ("Err".to_string(), vec![v.clone()]),
-                    MatchPattern::Variant(name, binds) => (name.rsplit("::").next().unwrap().to_string(), binds.clone()),
+                    MatchPattern::Variant(name, binds) => {
+                        (name.rsplit("::").next().unwrap().to_string(), binds.clone())
+                    }
                     MatchPattern::CatchAll => unreachable!(),
                 };
 
@@ -1204,7 +1857,10 @@ pub fn scan_locals_expr(
                                 locals.push((binding_name.clone(), f.ty.to_string()));
                             }
                         } else {
-                            panic!("Variant field '{}' not found in struct '{}'", field_name, resolved_ty);
+                            panic!(
+                                "Variant field '{}' not found in struct '{}'",
+                                field_name, resolved_ty
+                            );
                         }
                     }
                 }
@@ -1311,7 +1967,10 @@ pub fn scan_locals_expr(
         Expr::MapLit(pairs) => {
             let mut map_ty = get_expr_type(expr, sym, funcs, structs);
             let expected = CURRENT_EXPECTED_TYPE.with(|c| c.borrow().clone());
-            if expected.starts_with("Map<") || expected.starts_with("Map_") || expected.contains("Map") {
+            if expected.starts_with("Map<")
+                || expected.starts_with("Map_")
+                || expected.contains("Map")
+            {
                 map_ty = expected;
             }
             let temp_var = format!("_map_lit_tmp{}", *loop_idx);
@@ -1330,7 +1989,10 @@ pub fn scan_locals_expr(
         Expr::VecLit(elems) => {
             let mut vec_ty = get_expr_type(expr, sym, funcs, structs);
             let expected = CURRENT_EXPECTED_TYPE.with(|c| c.borrow().clone());
-            if expected.starts_with("Vec<") || expected.starts_with("Vec_") || expected.contains("Vec") {
+            if expected.starts_with("Vec<")
+                || expected.starts_with("Vec_")
+                || expected.contains("Vec")
+            {
                 vec_ty = expected;
             }
             let temp_var = format!("_vec_lit_tmp{}", *loop_idx);
@@ -1461,7 +2123,10 @@ pub fn scan_locals(
                 CURRENT_EXPECTED_TYPE.with(|c| *c.borrow_mut() = ty.clone());
             } else if let Some(resolved) = resolve_const_name(name) {
                 let const_ty = GLOBAL_CONSTS.with(|gc| {
-                    gc.borrow().get(&resolved).cloned().unwrap_or_else(|| "i32".to_string())
+                    gc.borrow()
+                        .get(&resolved)
+                        .cloned()
+                        .unwrap_or_else(|| "i32".to_string())
                 });
                 CURRENT_EXPECTED_TYPE.with(|c| *c.borrow_mut() = const_ty);
             }
@@ -1485,7 +2150,11 @@ pub fn scan_locals(
 
 pub fn is_pure_expr(expr: &Expr) -> bool {
     match expr {
-        Expr::Integer(_) | Expr::Float(_) | Expr::Identifier(_) | Expr::StringLit(_) | Expr::Bool(_) => true,
+        Expr::Integer(_)
+        | Expr::Float(_)
+        | Expr::Identifier(_)
+        | Expr::StringLit(_)
+        | Expr::Bool(_) => true,
         Expr::Binary(l, op, r) => {
             if matches!(op, Op::Div | Op::Rem) {
                 false
@@ -1513,17 +2182,37 @@ pub fn generate_stmt(
     match stmt {
         Stmt::Let(name, _, expr) => {
             let ty = sym.get(name).unwrap();
-            generate_expr(expr, sym, ty, wat, funcs, structs, string_lit_ids, loop_idx, varr_depth);
+            generate_expr(
+                expr,
+                sym,
+                ty,
+                wat,
+                funcs,
+                structs,
+                string_lit_ids,
+                loop_idx,
+                varr_depth,
+            );
             wat.push_str(&format!("    local.set ${}\n", name));
         }
         Stmt::LetTuple(bindings, expr) => {
             let tuple_ty = get_expr_type(expr, sym, funcs, structs);
             let temp_var = format!("_tuple_tmp_{}", loop_idx);
             *loop_idx += 1;
-            
-            generate_expr(expr, sym, &tuple_ty, wat, funcs, structs, string_lit_ids, loop_idx, varr_depth);
+
+            generate_expr(
+                expr,
+                sym,
+                &tuple_ty,
+                wat,
+                funcs,
+                structs,
+                string_lit_ids,
+                loop_idx,
+                varr_depth,
+            );
             wat.push_str(&format!("    local.set ${}\n", temp_var));
-            
+
             let resolved_name = resolve_struct_name(&tuple_ty, structs);
             for (idx, (var_name, _)) in bindings.iter().enumerate() {
                 wat.push_str(&format!("    local.get ${}\n", temp_var));
@@ -1538,30 +2227,83 @@ pub fn generate_stmt(
         Stmt::Return(opt_expr) => {
             if let Some(expr) = opt_expr {
                 if let Expr::Call(name, args) = expr {
-                    emit_call(name, args, sym, wat, funcs, structs, string_lit_ids, loop_idx, varr_depth, true, expected_return_ty);
+                    emit_call(
+                        name,
+                        args,
+                        sym,
+                        wat,
+                        funcs,
+                        structs,
+                        string_lit_ids,
+                        loop_idx,
+                        varr_depth,
+                        true,
+                        expected_return_ty,
+                    );
                 } else if let Expr::MethodCall(obj, method, args) = expr {
                     let obj_ty = get_expr_type(obj, sym, funcs, structs);
                     if lookup_builtin_intrinsic(&obj_ty, method).is_none() {
                         let resolved_obj_ty = resolve_struct_name(&obj_ty, structs);
                         let actual_name = resolve_method_name(&resolved_obj_ty, method, &[], funcs);
-                        generate_expr(obj, sym, &resolved_obj_ty, wat, funcs, structs, string_lit_ids, loop_idx, varr_depth);
+                        generate_expr(
+                            obj,
+                            sym,
+                            &resolved_obj_ty,
+                            wat,
+                            funcs,
+                            structs,
+                            string_lit_ids,
+                            loop_idx,
+                            varr_depth,
+                        );
                         let param_types: Vec<String> = if let Some(f) = funcs.get(&actual_name) {
                             f.params.iter().skip(1).map(|p| p.ty.to_string()).collect()
                         } else {
                             vec!["unknown".to_string(); args.len()]
                         };
                         for (i, arg) in args.iter().enumerate() {
-                            let expected = param_types.get(i).map(|s| s.as_str()).unwrap_or("unknown");
-                            generate_expr(arg, sym, expected, wat, funcs, structs, string_lit_ids, loop_idx, varr_depth);
+                            let expected =
+                                param_types.get(i).map(|s| s.as_str()).unwrap_or("unknown");
+                            generate_expr(
+                                arg,
+                                sym,
+                                expected,
+                                wat,
+                                funcs,
+                                structs,
+                                string_lit_ids,
+                                loop_idx,
+                                varr_depth,
+                            );
                         }
                         let safe_name = sanitize_wat_name(&actual_name);
                         wat.push_str(&format!("    return_call ${}\n", safe_name));
                     } else {
-                        generate_expr(expr, sym, expected_return_ty, wat, funcs, structs, string_lit_ids, loop_idx, varr_depth);
+                        generate_expr(
+                            expr,
+                            sym,
+                            expected_return_ty,
+                            wat,
+                            funcs,
+                            structs,
+                            string_lit_ids,
+                            loop_idx,
+                            varr_depth,
+                        );
                         wat.push_str("    return\n");
                     }
                 } else {
-                    generate_expr(expr, sym, expected_return_ty, wat, funcs, structs, string_lit_ids, loop_idx, varr_depth);
+                    generate_expr(
+                        expr,
+                        sym,
+                        expected_return_ty,
+                        wat,
+                        funcs,
+                        structs,
+                        string_lit_ids,
+                        loop_idx,
+                        varr_depth,
+                    );
                     wat.push_str("    return\n");
                 }
             } else {
@@ -1572,16 +2314,39 @@ pub fn generate_stmt(
             if sym.contains_key(name) {
                 let ty = sym.get(name).unwrap();
                 wat.push_str(&format!("    local.get ${}\n", name));
-                generate_expr(expr, sym, ty, wat, funcs, structs, string_lit_ids, loop_idx, varr_depth);
+                generate_expr(
+                    expr,
+                    sym,
+                    ty,
+                    wat,
+                    funcs,
+                    structs,
+                    string_lit_ids,
+                    loop_idx,
+                    varr_depth,
+                );
                 wat.push_str(&format!("    {}.add\n", ty));
                 wat.push_str(&format!("    local.set ${}\n", name));
             } else if let Some(resolved) = resolve_const_name(name) {
                 let const_ty = GLOBAL_CONSTS.with(|gc| {
-                    gc.borrow().get(&resolved).cloned().unwrap_or_else(|| "i32".to_string())
+                    gc.borrow()
+                        .get(&resolved)
+                        .cloned()
+                        .unwrap_or_else(|| "i32".to_string())
                 });
                 let safe_name = sanitize_wat_name(&resolved);
                 wat.push_str(&format!("    global.get ${}\n", safe_name));
-                generate_expr(expr, sym, &const_ty, wat, funcs, structs, string_lit_ids, loop_idx, varr_depth);
+                generate_expr(
+                    expr,
+                    sym,
+                    &const_ty,
+                    wat,
+                    funcs,
+                    structs,
+                    string_lit_ids,
+                    loop_idx,
+                    varr_depth,
+                );
                 wat.push_str(&format!("    {}.add\n", const_ty));
                 wat.push_str(&format!("    global.set ${}\n", safe_name));
             } else {
@@ -1590,7 +2355,17 @@ pub fn generate_stmt(
         }
         Stmt::ExprStmt(expr) => {
             let ty = get_expr_type(expr, sym, funcs, structs);
-            generate_expr(expr, sym, &ty, wat, funcs, structs, string_lit_ids, loop_idx, varr_depth);
+            generate_expr(
+                expr,
+                sym,
+                &ty,
+                wat,
+                funcs,
+                structs,
+                string_lit_ids,
+                loop_idx,
+                varr_depth,
+            );
             if ty != "void" {
                 wat.push_str("    drop\n");
             }
@@ -1602,17 +2377,50 @@ pub fn generate_stmt(
             }
             let cond_ty = get_expr_type(cond, sym, funcs, structs);
             if cond_ty != "bool" {
-                crate::diagnostics::report_error(format!("if condition must be a boolean, got type '{}'", cond_ty), None);
+                crate::diagnostics::report_error(
+                    format!("if condition must be a boolean, got type '{}'", cond_ty),
+                    None,
+                );
             }
-            generate_expr(cond, sym, "bool", wat, funcs, structs, string_lit_ids, loop_idx, varr_depth);
+            generate_expr(
+                cond,
+                sym,
+                "bool",
+                wat,
+                funcs,
+                structs,
+                string_lit_ids,
+                loop_idx,
+                varr_depth,
+            );
             wat.push_str("    if\n");
             for bstmt in body {
-                generate_stmt(bstmt, sym, expected_return_ty, loop_idx, wat, funcs, structs, string_lit_ids, varr_depth);
+                generate_stmt(
+                    bstmt,
+                    sym,
+                    expected_return_ty,
+                    loop_idx,
+                    wat,
+                    funcs,
+                    structs,
+                    string_lit_ids,
+                    varr_depth,
+                );
             }
             if let Some(e_body) = else_body {
                 wat.push_str("    else\n");
                 for bstmt in e_body {
-                    generate_stmt(bstmt, sym, expected_return_ty, loop_idx, wat, funcs, structs, string_lit_ids, varr_depth);
+                    generate_stmt(
+                        bstmt,
+                        sym,
+                        expected_return_ty,
+                        loop_idx,
+                        wat,
+                        funcs,
+                        structs,
+                        string_lit_ids,
+                        varr_depth,
+                    );
                 }
             }
             wat.push_str("    end\n");
@@ -1627,14 +2435,28 @@ pub fn generate_stmt(
 
             let cond_ty = get_expr_type(cond, sym, funcs, structs);
             if cond_ty != "bool" {
-                crate::diagnostics::report_error("while condition must be a boolean".to_string(), None);
+                crate::diagnostics::report_error(
+                    "while condition must be a boolean".to_string(),
+                    None,
+                );
             }
-            generate_expr(cond, sym, "bool", wat, funcs, structs, string_lit_ids, loop_idx, varr_depth);
+            generate_expr(
+                cond,
+                sym,
+                "bool",
+                wat,
+                funcs,
+                structs,
+                string_lit_ids,
+                loop_idx,
+                varr_depth,
+            );
             wat.push_str("    i32.eqz\n");
             wat.push_str(&format!("    br_if ${}\n", b_var));
 
             for bstmt in body {
-                generate_stmt(bstmt,
+                generate_stmt(
+                    bstmt,
                     sym,
                     expected_return_ty,
                     loop_idx,
@@ -1653,13 +2475,36 @@ pub fn generate_stmt(
         Stmt::Assign(name, expr) => {
             if sym.contains_key(name) {
                 let ty = sym.get(name).unwrap();
-                generate_expr(expr, sym, ty, wat, funcs, structs, string_lit_ids, loop_idx, varr_depth);
+                generate_expr(
+                    expr,
+                    sym,
+                    ty,
+                    wat,
+                    funcs,
+                    structs,
+                    string_lit_ids,
+                    loop_idx,
+                    varr_depth,
+                );
                 wat.push_str(&format!("    local.set ${}\n", name));
             } else if let Some(resolved) = resolve_const_name(name) {
                 let const_ty = GLOBAL_CONSTS.with(|gc| {
-                    gc.borrow().get(&resolved).cloned().unwrap_or_else(|| "i32".to_string())
+                    gc.borrow()
+                        .get(&resolved)
+                        .cloned()
+                        .unwrap_or_else(|| "i32".to_string())
                 });
-                generate_expr(expr, sym, &const_ty, wat, funcs, structs, string_lit_ids, loop_idx, varr_depth);
+                generate_expr(
+                    expr,
+                    sym,
+                    &const_ty,
+                    wat,
+                    funcs,
+                    structs,
+                    string_lit_ids,
+                    loop_idx,
+                    varr_depth,
+                );
                 let safe_name = sanitize_wat_name(&resolved);
                 wat.push_str(&format!("    global.set ${}\n", safe_name));
             } else {
@@ -1668,14 +2513,51 @@ pub fn generate_stmt(
         }
         Stmt::AssignIndex(arr, idx, val) => {
             let ty = get_expr_type(arr, sym, funcs, structs);
-            generate_expr(arr, sym, &ty, wat, funcs, structs, string_lit_ids, loop_idx, varr_depth);
-            generate_expr(idx, sym, "i32", wat, funcs, structs, string_lit_ids, loop_idx, varr_depth);
-            let val_ty = if ty.starts_with("[]") { &ty[2..] } else { "unknown" };
-            generate_expr(val, sym, val_ty, wat, funcs, structs, string_lit_ids, loop_idx, varr_depth);
+            generate_expr(
+                arr,
+                sym,
+                &ty,
+                wat,
+                funcs,
+                structs,
+                string_lit_ids,
+                loop_idx,
+                varr_depth,
+            );
+            generate_expr(
+                idx,
+                sym,
+                "i32",
+                wat,
+                funcs,
+                structs,
+                string_lit_ids,
+                loop_idx,
+                varr_depth,
+            );
+            let val_ty = if ty.starts_with("[]") {
+                &ty[2..]
+            } else {
+                "unknown"
+            };
+            generate_expr(
+                val,
+                sym,
+                val_ty,
+                wat,
+                funcs,
+                structs,
+                string_lit_ids,
+                loop_idx,
+                varr_depth,
+            );
             if ty.starts_with("[]") {
                 let inner = &ty[2..];
                 let resolved_inner = resolve_struct_name(inner, structs);
-                wat.push_str(&format!("    array.set $array_{}\n", sanitize_wat_name(&resolved_inner)));
+                wat.push_str(&format!(
+                    "    array.set $array_{}\n",
+                    sanitize_wat_name(&resolved_inner)
+                ));
             } else {
                 panic!("Assigning index on non-array type: {}", ty);
             }
@@ -1688,21 +2570,52 @@ pub fn generate_stmt(
             } else {
                 field.clone()
             };
-            let field_ty = structs.get(&resolved_obj_ty)
+            let field_ty = structs
+                .get(&resolved_obj_ty)
                 .and_then(|s| s.fields.iter().find(|f| f.name == wat_field))
                 .map(|f| f.ty.to_string())
                 .unwrap_or_else(|| "unknown".to_string());
-            generate_expr(obj, sym, &resolved_obj_ty, wat, funcs, structs, string_lit_ids, loop_idx, varr_depth);
-            generate_expr(val, sym, &field_ty, wat, funcs, structs, string_lit_ids, loop_idx, varr_depth);
-            wat.push_str(&format!("    struct.set ${} ${}\n", sanitize_wat_name(&resolved_obj_ty), wat_field));
+            generate_expr(
+                obj,
+                sym,
+                &resolved_obj_ty,
+                wat,
+                funcs,
+                structs,
+                string_lit_ids,
+                loop_idx,
+                varr_depth,
+            );
+            generate_expr(
+                val,
+                sym,
+                &field_ty,
+                wat,
+                funcs,
+                structs,
+                string_lit_ids,
+                loop_idx,
+                varr_depth,
+            );
+            wat.push_str(&format!(
+                "    struct.set ${} ${}\n",
+                sanitize_wat_name(&resolved_obj_ty),
+                wat_field
+            ));
         }
         Stmt::For(item_var, arr_var, body) => {
             let i_var = format!("_i{}", loop_idx);
             let len_var = format!("_len{}", loop_idx);
             *loop_idx += 1;
 
-            let arr_ty = sym.get(arr_var).expect("Array variable not found in symbol table");
-            let inner_ty = if arr_ty.starts_with("[]") { &arr_ty[2..] } else { "unknown" };
+            let arr_ty = sym
+                .get(arr_var)
+                .expect("Array variable not found in symbol table");
+            let inner_ty = if arr_ty.starts_with("[]") {
+                &arr_ty[2..]
+            } else {
+                "unknown"
+            };
 
             wat.push_str(&format!("    local.get ${}\n", arr_var));
             wat.push_str("    array.len\n");
@@ -1722,11 +2635,15 @@ pub fn generate_stmt(
             wat.push_str(&format!("    local.get ${}\n", arr_var));
             wat.push_str(&format!("    local.get ${}\n", i_var));
             let resolved_inner = resolve_struct_name(inner_ty, structs);
-            wat.push_str(&format!("        array.get $array_{}\n", sanitize_wat_name(&resolved_inner)));
+            wat.push_str(&format!(
+                "        array.get $array_{}\n",
+                sanitize_wat_name(&resolved_inner)
+            ));
             wat.push_str(&format!("        local.set ${}\n", item_var));
 
             for bstmt in body {
-                generate_stmt(bstmt,
+                generate_stmt(
+                    bstmt,
                     sym,
                     expected_return_ty,
                     loop_idx,
@@ -1752,36 +2669,86 @@ pub fn collect_string_literals(funcs: &[Function], consts: &[ConstDef]) -> Vec<S
     let mut literals = std::collections::HashSet::new();
     fn visit_expr(expr: &Expr, literals: &mut std::collections::HashSet<String>) {
         match expr {
-            Expr::StringLit(s) => { literals.insert(s.clone()); }
-            Expr::Binary(l, _, r) => { visit_expr(l, literals); visit_expr(r, literals); }
-            Expr::MethodCall(obj, _, args) => { visit_expr(obj, literals); for a in args { visit_expr(a, literals); } }
+            Expr::StringLit(s) => {
+                literals.insert(s.clone());
+            }
+            Expr::Binary(l, _, r) => {
+                visit_expr(l, literals);
+                visit_expr(r, literals);
+            }
+            Expr::MethodCall(obj, _, args) => {
+                visit_expr(obj, literals);
+                for a in args {
+                    visit_expr(a, literals);
+                }
+            }
             Expr::FieldAccess(obj, _) => visit_expr(obj, literals),
-            Expr::IndexAccess(arr, idx) => { visit_expr(arr, literals); visit_expr(idx, literals); }
-            Expr::StructInit(_, fields) => { for (_, e) in fields { visit_expr(e, literals); } }
-            Expr::New(_, args) => { for a in args { visit_expr(a, literals); } }
-            Expr::Call(_, args) => { for a in args { visit_expr(a, literals); } }
+            Expr::IndexAccess(arr, idx) => {
+                visit_expr(arr, literals);
+                visit_expr(idx, literals);
+            }
+            Expr::StructInit(_, fields) => {
+                for (_, e) in fields {
+                    visit_expr(e, literals);
+                }
+            }
+            Expr::New(_, args) => {
+                for a in args {
+                    visit_expr(a, literals);
+                }
+            }
+            Expr::Call(_, args) => {
+                for a in args {
+                    visit_expr(a, literals);
+                }
+            }
             Expr::If(cond, then_b, else_b) => {
                 visit_expr(cond, literals);
                 let (t_stmts, t_val) = &**then_b;
-                for s in t_stmts { visit_stmt(s, literals); }
-                if let Some(v) = t_val { visit_expr(v, literals); }
+                for s in t_stmts {
+                    visit_stmt(s, literals);
+                }
+                if let Some(v) = t_val {
+                    visit_expr(v, literals);
+                }
                 if let Some(eb) = else_b {
                     let (e_stmts, e_val) = &**eb;
-                    for s in e_stmts { visit_stmt(s, literals); }
-                    if let Some(v) = e_val { visit_expr(v, literals); }
+                    for s in e_stmts {
+                        visit_stmt(s, literals);
+                    }
+                    if let Some(v) = e_val {
+                        visit_expr(v, literals);
+                    }
                 }
             }
             Expr::Match(target, arms) => {
                 visit_expr(target, literals);
                 for arm in arms {
-                    for s in &arm.body { visit_stmt(s, literals); }
-                    if let Some(v) = &arm.val { visit_expr(v, literals); }
+                    for s in &arm.body {
+                        visit_stmt(s, literals);
+                    }
+                    if let Some(v) = &arm.val {
+                        visit_expr(v, literals);
+                    }
                 }
             }
             Expr::Spread(e) => visit_expr(e, literals),
-            Expr::Tuple(exprs) => { for e in exprs { visit_expr(e, literals); } }
-            Expr::MapLit(pairs) => { for (k, v) in pairs { visit_expr(k, literals); visit_expr(v, literals); } }
-            Expr::VecLit(elems) => { for e in elems { visit_expr(e, literals); } }
+            Expr::Tuple(exprs) => {
+                for e in exprs {
+                    visit_expr(e, literals);
+                }
+            }
+            Expr::MapLit(pairs) => {
+                for (k, v) in pairs {
+                    visit_expr(k, literals);
+                    visit_expr(v, literals);
+                }
+            }
+            Expr::VecLit(elems) => {
+                for e in elems {
+                    visit_expr(e, literals);
+                }
+            }
             _ => {}
         }
     }
@@ -1794,15 +2761,43 @@ pub fn collect_string_literals(funcs: &[Function], consts: &[ConstDef]) -> Vec<S
             Stmt::Return(None) => {}
             Stmt::Assign(_, e) => visit_expr(e, literals),
             Stmt::AssignPlus(_, e) => visit_expr(e, literals),
-            Stmt::AssignIndex(a, i, v) => { visit_expr(a, literals); visit_expr(i, literals); visit_expr(v, literals); }
-            Stmt::AssignField(o, _, v) => { visit_expr(o, literals); visit_expr(v, literals); }
-            Stmt::If(c, t, e) => { visit_expr(c, literals); for s in t { visit_stmt(s, literals); } if let Some(eb) = e { for s in eb { visit_stmt(s, literals); } } }
-            Stmt::While(c, b) => { visit_expr(c, literals); for s in b { visit_stmt(s, literals); } }
-            Stmt::For(_, _, b) => { for s in b { visit_stmt(s, literals); } }
+            Stmt::AssignIndex(a, i, v) => {
+                visit_expr(a, literals);
+                visit_expr(i, literals);
+                visit_expr(v, literals);
+            }
+            Stmt::AssignField(o, _, v) => {
+                visit_expr(o, literals);
+                visit_expr(v, literals);
+            }
+            Stmt::If(c, t, e) => {
+                visit_expr(c, literals);
+                for s in t {
+                    visit_stmt(s, literals);
+                }
+                if let Some(eb) = e {
+                    for s in eb {
+                        visit_stmt(s, literals);
+                    }
+                }
+            }
+            Stmt::While(c, b) => {
+                visit_expr(c, literals);
+                for s in b {
+                    visit_stmt(s, literals);
+                }
+            }
+            Stmt::For(_, _, b) => {
+                for s in b {
+                    visit_stmt(s, literals);
+                }
+            }
         }
     }
     for f in funcs {
-        for s in &f.body { visit_stmt(s, &mut literals); }
+        for s in &f.body {
+            visit_stmt(s, &mut literals);
+        }
     }
     for c in consts {
         visit_expr(&c.value, &mut literals);
@@ -1817,7 +2812,7 @@ pub fn generate_wat(
     structs: &[StructDef],
     string_literals: &[String],
     consts: &[ConstDef],
-    imports_registry: &HashMap<String, HashSet<String>>
+    imports_registry: &HashMap<String, HashSet<String>>,
 ) -> (String, Vec<StructDef>) {
     let mut consts_map = HashMap::new();
     for c in consts {
@@ -1859,14 +2854,26 @@ pub fn generate_wat(
     let mut used_struct_names = std::collections::HashSet::new();
     let mut fn_types = std::collections::HashSet::new();
 
-    fn extract_types(ty: &str, array_types: &mut std::collections::HashSet<String>, used_struct_names: &mut std::collections::HashSet<String>, structs_map: &HashMap<String, StructDef>, fn_types: &mut std::collections::HashSet<String>) {
+    fn extract_types(
+        ty: &str,
+        array_types: &mut std::collections::HashSet<String>,
+        used_struct_names: &mut std::collections::HashSet<String>,
+        structs_map: &HashMap<String, StructDef>,
+        fn_types: &mut std::collections::HashSet<String>,
+    ) {
         if ty.starts_with("[]") {
             let inner = &ty[2..];
             let resolved_inner = resolve_struct_name(inner, structs_map);
             array_types.insert(resolved_inner.clone());
-            extract_types(&resolved_inner, array_types, used_struct_names, structs_map, fn_types);
-            } else if ty.starts_with("fn(") {
-                fn_types.insert(normalize_fn_ty(ty));
+            extract_types(
+                &resolved_inner,
+                array_types,
+                used_struct_names,
+                structs_map,
+                fn_types,
+            );
+        } else if ty.starts_with("fn(") {
+            fn_types.insert(normalize_fn_ty(ty));
             // Extract inner types
             let inner = ty[3..].to_string();
             // Find the "):" separator at paren depth 0 to correctly split params and return type
@@ -1889,11 +2896,23 @@ pub fn generate_wat(
             }
             if let Some(colon) = colon_pos {
                 let params_str = &inner[..colon];
-                let ret_ty = &inner[colon+2..];
-                extract_types(ret_ty, array_types, used_struct_names, structs_map, fn_types);
+                let ret_ty = &inner[colon + 2..];
+                extract_types(
+                    ret_ty,
+                    array_types,
+                    used_struct_names,
+                    structs_map,
+                    fn_types,
+                );
                 if !params_str.is_empty() {
                     for p in params_str.split(',') {
-                        extract_types(p.trim(), array_types, used_struct_names, structs_map, fn_types);
+                        extract_types(
+                            p.trim(),
+                            array_types,
+                            used_struct_names,
+                            structs_map,
+                            fn_types,
+                        );
                     }
                 }
             }
@@ -1902,7 +2921,13 @@ pub fn generate_wat(
             if structs_map.contains_key(&resolved) {
                 if used_struct_names.insert(resolved.clone()) {
                     for f in &structs_map[&resolved].fields {
-                        extract_types(&f.ty.to_string(), array_types, used_struct_names, structs_map, fn_types);
+                        extract_types(
+                            &f.ty.to_string(),
+                            array_types,
+                            used_struct_names,
+                            structs_map,
+                            fn_types,
+                        );
                     }
                 }
             }
@@ -1927,98 +2952,293 @@ pub fn generate_wat(
                         }
                     }
                     let fn_ty = format!("fn({}):{}", params_str.join(","), f.return_ty);
-                    extract_types(&fn_ty, array_types, used_struct_names, structs_map, fn_types);
+                    extract_types(
+                        &fn_ty,
+                        array_types,
+                        used_struct_names,
+                        structs_map,
+                        fn_types,
+                    );
                 }
                 for c in captured {
-                    extract_closure_types_expr(c, funcs, array_types, used_struct_names, structs_map, fn_types);
+                    extract_closure_types_expr(
+                        c,
+                        funcs,
+                        array_types,
+                        used_struct_names,
+                        structs_map,
+                        fn_types,
+                    );
                 }
             }
             Expr::Tuple(exprs) => {
                 for e in exprs {
-                    extract_closure_types_expr(e, funcs, array_types, used_struct_names, structs_map, fn_types);
+                    extract_closure_types_expr(
+                        e,
+                        funcs,
+                        array_types,
+                        used_struct_names,
+                        structs_map,
+                        fn_types,
+                    );
                 }
             }
             Expr::Binary(l, _, r) => {
-                extract_closure_types_expr(l, funcs, array_types, used_struct_names, structs_map, fn_types);
-                extract_closure_types_expr(r, funcs, array_types, used_struct_names, structs_map, fn_types);
+                extract_closure_types_expr(
+                    l,
+                    funcs,
+                    array_types,
+                    used_struct_names,
+                    structs_map,
+                    fn_types,
+                );
+                extract_closure_types_expr(
+                    r,
+                    funcs,
+                    array_types,
+                    used_struct_names,
+                    structs_map,
+                    fn_types,
+                );
             }
             Expr::Call(_, args) => {
                 for a in args {
-                    extract_closure_types_expr(a, funcs, array_types, used_struct_names, structs_map, fn_types);
+                    extract_closure_types_expr(
+                        a,
+                        funcs,
+                        array_types,
+                        used_struct_names,
+                        structs_map,
+                        fn_types,
+                    );
                 }
             }
             Expr::MethodCall(obj, _, args) => {
-                extract_closure_types_expr(obj, funcs, array_types, used_struct_names, structs_map, fn_types);
+                extract_closure_types_expr(
+                    obj,
+                    funcs,
+                    array_types,
+                    used_struct_names,
+                    structs_map,
+                    fn_types,
+                );
                 for a in args {
-                    extract_closure_types_expr(a, funcs, array_types, used_struct_names, structs_map, fn_types);
+                    extract_closure_types_expr(
+                        a,
+                        funcs,
+                        array_types,
+                        used_struct_names,
+                        structs_map,
+                        fn_types,
+                    );
                 }
             }
             Expr::InvokeFuncPtr(func_expr, args) => {
-                extract_closure_types_expr(func_expr, funcs, array_types, used_struct_names, structs_map, fn_types);
+                extract_closure_types_expr(
+                    func_expr,
+                    funcs,
+                    array_types,
+                    used_struct_names,
+                    structs_map,
+                    fn_types,
+                );
                 for a in args {
-                    extract_closure_types_expr(a, funcs, array_types, used_struct_names, structs_map, fn_types);
+                    extract_closure_types_expr(
+                        a,
+                        funcs,
+                        array_types,
+                        used_struct_names,
+                        structs_map,
+                        fn_types,
+                    );
                 }
             }
             Expr::StructInit(_, fields) => {
                 for (_, e) in fields {
-                    extract_closure_types_expr(e, funcs, array_types, used_struct_names, structs_map, fn_types);
+                    extract_closure_types_expr(
+                        e,
+                        funcs,
+                        array_types,
+                        used_struct_names,
+                        structs_map,
+                        fn_types,
+                    );
                 }
             }
             Expr::IndexAccess(arr, idx) => {
-                extract_closure_types_expr(arr, funcs, array_types, used_struct_names, structs_map, fn_types);
-                extract_closure_types_expr(idx, funcs, array_types, used_struct_names, structs_map, fn_types);
+                extract_closure_types_expr(
+                    arr,
+                    funcs,
+                    array_types,
+                    used_struct_names,
+                    structs_map,
+                    fn_types,
+                );
+                extract_closure_types_expr(
+                    idx,
+                    funcs,
+                    array_types,
+                    used_struct_names,
+                    structs_map,
+                    fn_types,
+                );
             }
             Expr::FieldAccess(obj, _) => {
-                extract_closure_types_expr(obj, funcs, array_types, used_struct_names, structs_map, fn_types);
+                extract_closure_types_expr(
+                    obj,
+                    funcs,
+                    array_types,
+                    used_struct_names,
+                    structs_map,
+                    fn_types,
+                );
             }
             Expr::Cast(e, _) => {
-                extract_closure_types_expr(e, funcs, array_types, used_struct_names, structs_map, fn_types);
+                extract_closure_types_expr(
+                    e,
+                    funcs,
+                    array_types,
+                    used_struct_names,
+                    structs_map,
+                    fn_types,
+                );
             }
             Expr::Match(cond, arms) => {
-                extract_closure_types_expr(cond, funcs, array_types, used_struct_names, structs_map, fn_types);
+                extract_closure_types_expr(
+                    cond,
+                    funcs,
+                    array_types,
+                    used_struct_names,
+                    structs_map,
+                    fn_types,
+                );
                 for arm in arms {
                     for s in &arm.body {
-                        extract_closure_types_stmt(s, funcs, array_types, used_struct_names, structs_map, fn_types);
+                        extract_closure_types_stmt(
+                            s,
+                            funcs,
+                            array_types,
+                            used_struct_names,
+                            structs_map,
+                            fn_types,
+                        );
                     }
                     if let Some(v) = &arm.val {
-                        extract_closure_types_expr(v, funcs, array_types, used_struct_names, structs_map, fn_types);
+                        extract_closure_types_expr(
+                            v,
+                            funcs,
+                            array_types,
+                            used_struct_names,
+                            structs_map,
+                            fn_types,
+                        );
                     }
                 }
             }
             Expr::If(cond, then_block, else_block) => {
-                extract_closure_types_expr(cond, funcs, array_types, used_struct_names, structs_map, fn_types);
+                extract_closure_types_expr(
+                    cond,
+                    funcs,
+                    array_types,
+                    used_struct_names,
+                    structs_map,
+                    fn_types,
+                );
                 for s in &then_block.0 {
-                    extract_closure_types_stmt(s, funcs, array_types, used_struct_names, structs_map, fn_types);
+                    extract_closure_types_stmt(
+                        s,
+                        funcs,
+                        array_types,
+                        used_struct_names,
+                        structs_map,
+                        fn_types,
+                    );
                 }
                 if let Some(v) = &then_block.1 {
-                    extract_closure_types_expr(v, funcs, array_types, used_struct_names, structs_map, fn_types);
+                    extract_closure_types_expr(
+                        v,
+                        funcs,
+                        array_types,
+                        used_struct_names,
+                        structs_map,
+                        fn_types,
+                    );
                 }
                 if let Some(eb) = else_block {
                     for s in &eb.0 {
-                        extract_closure_types_stmt(s, funcs, array_types, used_struct_names, structs_map, fn_types);
+                        extract_closure_types_stmt(
+                            s,
+                            funcs,
+                            array_types,
+                            used_struct_names,
+                            structs_map,
+                            fn_types,
+                        );
                     }
                     if let Some(v) = &eb.1 {
-                        extract_closure_types_expr(v, funcs, array_types, used_struct_names, structs_map, fn_types);
+                        extract_closure_types_expr(
+                            v,
+                            funcs,
+                            array_types,
+                            used_struct_names,
+                            structs_map,
+                            fn_types,
+                        );
                     }
                 }
             }
             Expr::New(_, args) => {
                 for a in args {
-                    extract_closure_types_expr(a, funcs, array_types, used_struct_names, structs_map, fn_types);
+                    extract_closure_types_expr(
+                        a,
+                        funcs,
+                        array_types,
+                        used_struct_names,
+                        structs_map,
+                        fn_types,
+                    );
                 }
             }
             Expr::Spread(e) => {
-                extract_closure_types_expr(e, funcs, array_types, used_struct_names, structs_map, fn_types);
+                extract_closure_types_expr(
+                    e,
+                    funcs,
+                    array_types,
+                    used_struct_names,
+                    structs_map,
+                    fn_types,
+                );
             }
             Expr::MapLit(pairs) => {
                 for (k, v) in pairs {
-                    extract_closure_types_expr(k, funcs, array_types, used_struct_names, structs_map, fn_types);
-                    extract_closure_types_expr(v, funcs, array_types, used_struct_names, structs_map, fn_types);
+                    extract_closure_types_expr(
+                        k,
+                        funcs,
+                        array_types,
+                        used_struct_names,
+                        structs_map,
+                        fn_types,
+                    );
+                    extract_closure_types_expr(
+                        v,
+                        funcs,
+                        array_types,
+                        used_struct_names,
+                        structs_map,
+                        fn_types,
+                    );
                 }
             }
             Expr::VecLit(elems) => {
                 for e in elems {
-                    extract_closure_types_expr(e, funcs, array_types, used_struct_names, structs_map, fn_types);
+                    extract_closure_types_expr(
+                        e,
+                        funcs,
+                        array_types,
+                        used_struct_names,
+                        structs_map,
+                        fn_types,
+                    );
                 }
             }
             _ => {}
@@ -2034,45 +3254,146 @@ pub fn generate_wat(
         fn_types: &mut std::collections::HashSet<String>,
     ) {
         match stmt {
-            Stmt::Let(_, _, expr) | Stmt::Assign(_, expr) | Stmt::AssignPlus(_, expr) | Stmt::ExprStmt(expr) => {
-                extract_closure_types_expr(expr, funcs, array_types, used_struct_names, structs_map, fn_types);
+            Stmt::Let(_, _, expr)
+            | Stmt::Assign(_, expr)
+            | Stmt::AssignPlus(_, expr)
+            | Stmt::ExprStmt(expr) => {
+                extract_closure_types_expr(
+                    expr,
+                    funcs,
+                    array_types,
+                    used_struct_names,
+                    structs_map,
+                    fn_types,
+                );
             }
             Stmt::LetTuple(_, expr) => {
-                extract_closure_types_expr(expr, funcs, array_types, used_struct_names, structs_map, fn_types);
+                extract_closure_types_expr(
+                    expr,
+                    funcs,
+                    array_types,
+                    used_struct_names,
+                    structs_map,
+                    fn_types,
+                );
             }
             Stmt::AssignIndex(arr, idx, expr) => {
-                extract_closure_types_expr(arr, funcs, array_types, used_struct_names, structs_map, fn_types);
-                extract_closure_types_expr(idx, funcs, array_types, used_struct_names, structs_map, fn_types);
-                extract_closure_types_expr(expr, funcs, array_types, used_struct_names, structs_map, fn_types);
+                extract_closure_types_expr(
+                    arr,
+                    funcs,
+                    array_types,
+                    used_struct_names,
+                    structs_map,
+                    fn_types,
+                );
+                extract_closure_types_expr(
+                    idx,
+                    funcs,
+                    array_types,
+                    used_struct_names,
+                    structs_map,
+                    fn_types,
+                );
+                extract_closure_types_expr(
+                    expr,
+                    funcs,
+                    array_types,
+                    used_struct_names,
+                    structs_map,
+                    fn_types,
+                );
             }
             Stmt::AssignField(obj, _, expr) => {
-                extract_closure_types_expr(obj, funcs, array_types, used_struct_names, structs_map, fn_types);
-                extract_closure_types_expr(expr, funcs, array_types, used_struct_names, structs_map, fn_types);
+                extract_closure_types_expr(
+                    obj,
+                    funcs,
+                    array_types,
+                    used_struct_names,
+                    structs_map,
+                    fn_types,
+                );
+                extract_closure_types_expr(
+                    expr,
+                    funcs,
+                    array_types,
+                    used_struct_names,
+                    structs_map,
+                    fn_types,
+                );
             }
             Stmt::If(cond, body, else_body) => {
-                extract_closure_types_expr(cond, funcs, array_types, used_struct_names, structs_map, fn_types);
+                extract_closure_types_expr(
+                    cond,
+                    funcs,
+                    array_types,
+                    used_struct_names,
+                    structs_map,
+                    fn_types,
+                );
                 for s in body {
-                    extract_closure_types_stmt(s, funcs, array_types, used_struct_names, structs_map, fn_types);
+                    extract_closure_types_stmt(
+                        s,
+                        funcs,
+                        array_types,
+                        used_struct_names,
+                        structs_map,
+                        fn_types,
+                    );
                 }
                 if let Some(eb) = else_body {
                     for s in eb {
-                        extract_closure_types_stmt(s, funcs, array_types, used_struct_names, structs_map, fn_types);
+                        extract_closure_types_stmt(
+                            s,
+                            funcs,
+                            array_types,
+                            used_struct_names,
+                            structs_map,
+                            fn_types,
+                        );
                     }
                 }
             }
             Stmt::While(cond, body) => {
-                extract_closure_types_expr(cond, funcs, array_types, used_struct_names, structs_map, fn_types);
+                extract_closure_types_expr(
+                    cond,
+                    funcs,
+                    array_types,
+                    used_struct_names,
+                    structs_map,
+                    fn_types,
+                );
                 for s in body {
-                    extract_closure_types_stmt(s, funcs, array_types, used_struct_names, structs_map, fn_types);
+                    extract_closure_types_stmt(
+                        s,
+                        funcs,
+                        array_types,
+                        used_struct_names,
+                        structs_map,
+                        fn_types,
+                    );
                 }
             }
             Stmt::For(_, _, body) => {
                 for s in body {
-                    extract_closure_types_stmt(s, funcs, array_types, used_struct_names, structs_map, fn_types);
+                    extract_closure_types_stmt(
+                        s,
+                        funcs,
+                        array_types,
+                        used_struct_names,
+                        structs_map,
+                        fn_types,
+                    );
                 }
             }
             Stmt::Return(Some(expr)) => {
-                extract_closure_types_expr(expr, funcs, array_types, used_struct_names, structs_map, fn_types);
+                extract_closure_types_expr(
+                    expr,
+                    funcs,
+                    array_types,
+                    used_struct_names,
+                    structs_map,
+                    fn_types,
+                );
             }
             _ => {}
         }
@@ -2083,11 +3404,29 @@ pub fn generate_wat(
     }
 
     for f in funcs {
-        extract_types(&f.return_ty.to_string(), &mut array_types, &mut used_struct_names, &structs_map, &mut fn_types);
+        extract_types(
+            &f.return_ty.to_string(),
+            &mut array_types,
+            &mut used_struct_names,
+            &structs_map,
+            &mut fn_types,
+        );
         for p in &f.params {
-            extract_types(&p.ty.to_string(), &mut array_types, &mut used_struct_names, &structs_map, &mut fn_types);
+            extract_types(
+                &p.ty.to_string(),
+                &mut array_types,
+                &mut used_struct_names,
+                &structs_map,
+                &mut fn_types,
+            );
             if p.is_variadic {
-                extract_types(&format!("[]{}", p.ty), &mut array_types, &mut used_struct_names, &structs_map, &mut fn_types);
+                extract_types(
+                    &format!("[]{}", p.ty),
+                    &mut array_types,
+                    &mut used_struct_names,
+                    &structs_map,
+                    &mut fn_types,
+                );
             }
         }
         let mut func_types = Vec::new();
@@ -2099,24 +3438,59 @@ pub fn generate_wat(
             collect_types_from_stmt(s, &mut func_types, &mut env);
         }
         for ty in func_types {
-            extract_types(&ty, &mut array_types, &mut used_struct_names, &structs_map, &mut fn_types);
+            extract_types(
+                &ty,
+                &mut array_types,
+                &mut used_struct_names,
+                &structs_map,
+                &mut fn_types,
+            );
         }
         for s in &f.body {
-            extract_closure_types_stmt(s, &funcs_map, &mut array_types, &mut used_struct_names, &structs_map, &mut fn_types);
+            extract_closure_types_stmt(
+                s,
+                &funcs_map,
+                &mut array_types,
+                &mut used_struct_names,
+                &structs_map,
+                &mut fn_types,
+            );
         }
     }
-    
+
     for c in consts {
-        extract_types(&c.ty.to_string(), &mut array_types, &mut used_struct_names, &structs_map, &mut fn_types);
+        extract_types(
+            &c.ty.to_string(),
+            &mut array_types,
+            &mut used_struct_names,
+            &structs_map,
+            &mut fn_types,
+        );
         let mut expr_types = Vec::new();
         collect_types_from_expr(&c.value, &mut expr_types, &HashMap::new());
         for ty in expr_types {
-            extract_types(&ty, &mut array_types, &mut used_struct_names, &structs_map, &mut fn_types);
+            extract_types(
+                &ty,
+                &mut array_types,
+                &mut used_struct_names,
+                &structs_map,
+                &mut fn_types,
+            );
         }
-        extract_closure_types_expr(&c.value, &funcs_map, &mut array_types, &mut used_struct_names, &structs_map, &mut fn_types);
+        extract_closure_types_expr(
+            &c.value,
+            &funcs_map,
+            &mut array_types,
+            &mut used_struct_names,
+            &structs_map,
+            &mut fn_types,
+        );
     }
-    
-    let filtered_structs: Vec<&StructDef> = structs.iter().filter(|s| used_struct_names.contains(&s.name)).collect();
+
+    let filtered_structs: Vec<&StructDef> = structs
+        .iter()
+        .filter(|s| used_struct_names.contains(&s.name))
+        .collect();
 
     let mut wat = String::new();
 
@@ -2148,8 +3522,8 @@ pub fn generate_wat(
         }
         if let Some(colon) = colon_pos {
             let params_str = &inner[..colon];
-            let ret_ty = &inner[colon+2..];
-            
+            let ret_ty = &inner[colon + 2..];
+
             let mut param_wasm = Vec::new();
             if !params_str.is_empty() {
                 for p in params_str.split(',') {
@@ -2157,7 +3531,7 @@ pub fn generate_wat(
                 }
             }
             let ret_wasm = map_wasm_ty(ret_ty, &structs_map);
-            
+
             let sig_name = format!("sig_{}", fat_name);
             fn_type_wat.push_str(&format!("    (type ${} (func", sig_name));
             for p in &param_wasm {
@@ -2168,7 +3542,7 @@ pub fn generate_wat(
                 fn_type_wat.push_str(&format!(" (result {})", ret_wasm));
             }
             fn_type_wat.push_str("))\n");
-            
+
             fn_type_wat.push_str(&format!("    (type ${} (struct (field $func_ref (mut (ref null ${}))) (field $env (mut (ref null any)))))\n", fat_name, sig_name));
         }
     }
@@ -2178,13 +3552,14 @@ pub fn generate_wat(
     // reuse the $sig type instead.  This ensures ref.func and struct.new
     // reference the SAME type index, which the Wasm validator requires
     // since types in different rec groups are nominally distinct.
-    let fn_ty_to_sig_name: HashMap<String, String> = fn_types.iter().map(|fn_ty| {
-        let fat_name = fn_type_to_wasm_name(fn_ty);
-        let sig_name = format!("sig_{}", fat_name);
-        (fn_ty.clone(), sig_name)
-    }).collect();
-
-
+    let fn_ty_to_sig_name: HashMap<String, String> = fn_types
+        .iter()
+        .map(|fn_ty| {
+            let fat_name = fn_type_to_wasm_name(fn_ty);
+            let sig_name = format!("sig_{}", fat_name);
+            (fn_ty.clone(), sig_name)
+        })
+        .collect();
 
     if funcs.iter().any(|f| f.is_variadic()) {
         wat.push_str(&emit_fmt_runtime_helper_funcs());
@@ -2213,7 +3588,10 @@ pub fn generate_wat(
             }
             let func_return_ty_str = func.return_ty.to_string();
             if func_return_ty_str != "void" && !func_return_ty_str.is_empty() {
-                wat_imports.push_str(&format!(" (result {})", map_wasm_ty(&func_return_ty_str, &structs_map)));
+                wat_imports.push_str(&format!(
+                    " (result {})",
+                    map_wasm_ty(&func_return_ty_str, &structs_map)
+                ));
             }
             wat_imports.push_str("))\n");
         }
@@ -2238,13 +3616,17 @@ pub fn generate_wat(
             } else {
                 map_wasm_ty(&param.ty.to_string(), &structs_map)
             };
-            if ty.starts_with("(ref") { has_ref_type = true; }
+            if ty.starts_with("(ref") {
+                has_ref_type = true;
+            }
             param_wasm_tys.push(ty);
         }
         let func_return_ty_str = func.return_ty.to_string();
         let return_wasm_ty = if func_return_ty_str != "void" && !func_return_ty_str.is_empty() {
             let rty = map_wasm_ty(&func_return_ty_str, &structs_map);
-            if rty.starts_with("(ref") { has_ref_type = true; }
+            if rty.starts_with("(ref") {
+                has_ref_type = true;
+            }
             Some(rty)
         } else {
             None
@@ -2255,11 +3637,14 @@ pub fn generate_wat(
         if has_ref_type {
             // Reconstruct the fn_ty string to check whether this function's
             // signature matches an existing $sig type in the rec block.
-            let fn_params: Vec<String> = func.params.iter()
+            let fn_params: Vec<String> = func
+                .params
+                .iter()
                 .filter(|p| p.name != "__env")
                 .map(|p| p.ty.to_string())
                 .collect();
-            let func_fn_ty = normalize_fn_ty(&format!("fn({}):{}", fn_params.join(","), func.return_ty));
+            let func_fn_ty =
+                normalize_fn_ty(&format!("fn({}):{}", fn_params.join(","), func.return_ty));
             let is_closure = func.params.iter().any(|p| p.name == "__env");
             if is_closure && fn_ty_to_sig_name.contains_key(&func_fn_ty) {
                 let sig_name = fn_ty_to_sig_name.get(&func_fn_ty).unwrap();
@@ -2281,11 +3666,7 @@ pub fn generate_wat(
         } else {
             wat.push_str(&format!("  (func ${}", safe_name));
             for (i, param) in func.params.iter().enumerate() {
-                wat.push_str(&format!(
-                    " (param ${} {})",
-                    param.name,
-                    param_wasm_tys[i]
-                ));
+                wat.push_str(&format!(" (param ${} {})", param.name, param_wasm_tys[i]));
             }
             if let Some(ref rty) = return_wasm_ty {
                 wat.push_str(&format!(" (result {})\n", rty));
@@ -2327,7 +3708,10 @@ pub fn generate_wat(
         }
         if func_uses_variadic {
             for i in 0..8 {
-                wat.push_str(&format!("    (local $_varr_{} (ref null $array_anyref))\n", i));
+                wat.push_str(&format!(
+                    "    (local $_varr_{} (ref null $array_anyref))\n",
+                    i
+                ));
             }
         }
 
@@ -2343,7 +3727,10 @@ pub fn generate_wat(
         // locals and copy from indices to named locals.
         if has_ref_type {
             for (i, param) in func.params.iter().enumerate() {
-                wat.push_str(&format!("    (local ${} {})\n", param.name, param_wasm_tys[i]));
+                wat.push_str(&format!(
+                    "    (local ${} {})\n",
+                    param.name, param_wasm_tys[i]
+                ));
             }
         }
 
@@ -2427,7 +3814,11 @@ pub fn generate_wat(
         }
 
         wat.push_str("  )\n");
-        if (func.is_pub && get_namespace(&func.name) == "") || func.name == "task::fox_run_task" || func.name == "main" || func.is_compiler {
+        if (func.is_pub && get_namespace(&func.name) == "")
+            || func.name == "task::fox_run_task"
+            || func.name == "main"
+            || func.is_compiler
+        {
             let export_name = if func.name == "task::fox_run_task" {
                 "fox_run_task"
             } else {
@@ -2464,7 +3855,10 @@ pub fn generate_wat(
     let mut final_wat = String::new();
     final_wat.push_str("(module\n");
     for (id, _lit) in string_literals.iter().enumerate() {
-        final_wat.push_str(&format!("  (import \"env\" \"s{}\" (global $s{} externref))\n", id, id));
+        final_wat.push_str(&format!(
+            "  (import \"env\" \"s{}\" (global $s{} externref))\n",
+            id, id
+        ));
     }
     // Put all types (fn pointer + struct + array) into a single rec block so they
     // can reference each other freely (e.g. a fn type may return Option<fn()>, and
@@ -2475,7 +3869,10 @@ pub fn generate_wat(
         final_wat.push_str("  (rec\n");
         final_wat.push_str(&fn_type_wat);
         for s in &filtered_structs {
-            final_wat.push_str(&format!("    (type ${} (struct ", sanitize_wat_name(&s.name)));
+            final_wat.push_str(&format!(
+                "    (type ${} (struct ",
+                sanitize_wat_name(&s.name)
+            ));
             for f in &s.fields {
                 final_wat.push_str(&format!(
                     "(field ${} (mut {})) ",
@@ -2487,7 +3884,11 @@ pub fn generate_wat(
         }
         for inner in &array_types {
             let wasm_inner = map_wasm_ty(inner, &structs_map);
-            final_wat.push_str(&format!("    (type $array_{} (array (mut {})))\n", sanitize_wat_name(inner), wasm_inner));
+            final_wat.push_str(&format!(
+                "    (type $array_{} (array (mut {})))\n",
+                sanitize_wat_name(inner),
+                wasm_inner
+            ));
         }
         final_wat.push_str("  )\n");
     }
@@ -2497,10 +3898,18 @@ pub fn generate_wat(
     // newly declared builtin method only needs to be added to
     // `lookup_builtin_intrinsic` to be fully wired up.
     let builtin_methods = [
-        ("str", "len"), ("str", "char_at"),
-        ("str", "starts_with"), ("str", "ends_with"), ("str", "contains"),
-        ("str", "index_of"), ("str", "last_index_of"),
-        ("str", "is_empty"), ("str", "eq"), ("str", "join"), ("str", "compare"), ("str", "substring"),
+        ("str", "len"),
+        ("str", "char_at"),
+        ("str", "starts_with"),
+        ("str", "ends_with"),
+        ("str", "contains"),
+        ("str", "index_of"),
+        ("str", "last_index_of"),
+        ("str", "is_empty"),
+        ("str", "eq"),
+        ("str", "join"),
+        ("str", "compare"),
+        ("str", "substring"),
     ];
     for (parent, method) in builtin_methods.iter() {
         if let Some(intr) = lookup_builtin_intrinsic(parent, method) {
@@ -2525,7 +3934,10 @@ pub fn generate_wat(
             let import_name = shorten_import_name(intr.import_name.unwrap());
             final_wat.push_str(&format!(
                 "  (import \"{}\" \"{}\" (func {}{}))\n",
-                intr.module.unwrap(), import_name, wasm_fn, sig
+                intr.module.unwrap(),
+                import_name,
+                wasm_fn,
+                sig
             ));
         }
     }
@@ -2573,7 +3985,8 @@ pub fn generate_wat(
         let safe_name = sanitize_wat_name(&c.name);
         if (!c.is_pub || get_namespace(&c.name) != "")
             && !wat.contains(&format!("global.get ${}", safe_name))
-            && !wat.contains(&format!("global.set ${}", safe_name)) {
+            && !wat.contains(&format!("global.set ${}", safe_name))
+        {
             continue;
         }
         let wasm_ty = map_wasm_ty(&c.ty.to_string(), &structs_map);
@@ -2585,10 +3998,23 @@ pub fn generate_wat(
 
         if c.is_mutable && !is_const_expr(&c.value, &consts_map) {
             let default_init = get_wasm_default_const(&wasm_ty);
-            final_wat.push_str(&format!("  (global ${} {} ({}))\n", safe_name, global_ty, default_init));
-            
+            final_wat.push_str(&format!(
+                "  (global ${} {} ({}))\n",
+                safe_name, global_ty, default_init
+            ));
+
             let mut init_code = String::new();
-            generate_expr(&c.value, &HashMap::new(), &c.ty.to_string(), &mut init_code, &funcs_map, &structs_map, &string_lit_ids, &mut global_loop_idx, &mut global_varr_depth);
+            generate_expr(
+                &c.value,
+                &HashMap::new(),
+                &c.ty.to_string(),
+                &mut init_code,
+                &funcs_map,
+                &structs_map,
+                &string_lit_ids,
+                &mut global_loop_idx,
+                &mut global_varr_depth,
+            );
             global_init_statements.push_str(&init_code);
             global_init_statements.push_str(&format!("    global.set ${}\n", safe_name));
         } else {
@@ -2597,18 +4023,26 @@ pub fn generate_wat(
             GLOBAL_CONST_VALUES.with(|gcv| {
                 gcv.borrow_mut().insert(c.name.clone(), val);
             });
-            final_wat.push_str(&format!("  (global ${} {} ({}))\n", safe_name, global_ty, init_wat));
+            final_wat.push_str(&format!(
+                "  (global ${} {} ({}))\n",
+                safe_name, global_ty, init_wat
+            ));
         }
 
         if c.is_pub && get_namespace(&c.name) == "" {
-            final_wat.push_str(&format!("  (export \"{}\" (global ${}))\n", safe_name, safe_name));
+            final_wat.push_str(&format!(
+                "  (export \"{}\" (global ${}))\n",
+                safe_name, safe_name
+            ));
         }
     }
     CURRENT_NAMESPACE.with(|cn| {
         *cn.borrow_mut() = "".to_string();
     });
     if wat.contains("call $fox_str_bytes") {
-        final_wat.push_str("  (func $fox_str_bytes (param $s externref) (result (ref null $array_byte))\n");
+        final_wat.push_str(
+            "  (func $fox_str_bytes (param $s externref) (result (ref null $array_byte))\n",
+        );
         final_wat.push_str("    (local $len i32)\n");
         final_wat.push_str("    (local $arr (ref null $array_byte))\n");
         final_wat.push_str("    (local $i i32)\n");
@@ -2642,7 +4076,7 @@ pub fn generate_wat(
         final_wat.push_str("    local.get $arr\n");
         final_wat.push_str("  )\n");
     }
-    
+
     let mut elem_declares = Vec::new();
     for f in funcs {
         if f.name.contains("__closure_") {
@@ -2651,9 +4085,12 @@ pub fn generate_wat(
     }
 
     if !elem_declares.is_empty() {
-        final_wat.push_str(&format!("  (elem declare func {})\n", elem_declares.join(" ")));
+        final_wat.push_str(&format!(
+            "  (elem declare func {})\n",
+            elem_declares.join(" ")
+        ));
     }
-    
+
     final_wat.push_str(&wat);
     for inner in &array_types {
         let wasm_inner = map_wasm_ty(inner, &structs_map);
@@ -2694,7 +4131,11 @@ pub fn generate_wat(
     (final_wat, filtered_structs.into_iter().cloned().collect())
 }
 
-pub fn collect_types_from_expr(expr: &Expr, types: &mut Vec<String>, env: &HashMap<String, String>) {
+pub fn collect_types_from_expr(
+    expr: &Expr,
+    types: &mut Vec<String>,
+    env: &HashMap<String, String>,
+) {
     match expr {
         Expr::New(ty, args) => {
             types.push(ty.to_string());
@@ -2731,7 +4172,11 @@ pub fn collect_types_from_expr(expr: &Expr, types: &mut Vec<String>, env: &HashM
                         depth += 1;
                     } else if chars[i] == '>' {
                         depth -= 1;
-                    } else if chars[i] == ':' && i + 1 < chars.len() && chars[i+1] == ':' && depth == 0 {
+                    } else if chars[i] == ':'
+                        && i + 1 < chars.len()
+                        && chars[i + 1] == ':'
+                        && depth == 0
+                    {
                         last_colon_idx = Some(i);
                         i += 1;
                     }
@@ -2769,13 +4214,21 @@ pub fn collect_types_from_expr(expr: &Expr, types: &mut Vec<String>, env: &HashM
             collect_types_from_expr(cond, types, env);
             let (t_stmts, t_val) = &**then_b;
             let mut then_env = env.clone();
-            for s in t_stmts { collect_types_from_stmt(s, types, &mut then_env); }
-            if let Some(v) = t_val { collect_types_from_expr(v, types, env); }
+            for s in t_stmts {
+                collect_types_from_stmt(s, types, &mut then_env);
+            }
+            if let Some(v) = t_val {
+                collect_types_from_expr(v, types, env);
+            }
             if let Some(eb) = else_b {
                 let (e_stmts, e_val) = &**eb;
                 let mut else_env = env.clone();
-                for s in e_stmts { collect_types_from_stmt(s, types, &mut else_env); }
-                if let Some(v) = e_val { collect_types_from_expr(v, types, env); }
+                for s in e_stmts {
+                    collect_types_from_stmt(s, types, &mut else_env);
+                }
+                if let Some(v) = e_val {
+                    collect_types_from_expr(v, types, env);
+                }
             }
         }
         Expr::Match(target, arms) => {
@@ -2827,8 +4280,12 @@ pub fn collect_types_from_expr(expr: &Expr, types: &mut Vec<String>, env: &HashM
                     }
                     _ => {}
                 }
-                for s in &arm.body { collect_types_from_stmt(s, types, &mut arm_env); }
-                if let Some(v) = &arm.val { collect_types_from_expr(v, types, env); }
+                for s in &arm.body {
+                    collect_types_from_stmt(s, types, &mut arm_env);
+                }
+                if let Some(v) = &arm.val {
+                    collect_types_from_expr(v, types, env);
+                }
             }
         }
         Expr::ClosureInstantiate(_, env_name, captured) => {
@@ -2874,7 +4331,11 @@ pub fn collect_types_from_expr(expr: &Expr, types: &mut Vec<String>, env: &HashM
     }
 }
 
-pub fn collect_types_from_stmt(stmt: &Stmt, types: &mut Vec<String>, env: &mut HashMap<String, String>) {
+pub fn collect_types_from_stmt(
+    stmt: &Stmt,
+    types: &mut Vec<String>,
+    env: &mut HashMap<String, String>,
+) {
     match stmt {
         Stmt::Let(name, ty_annot, expr) => {
             let ty = if let Some(ty) = ty_annot {
@@ -2982,30 +4443,45 @@ pub fn dead_code_eliminate(
 
     let func_map: HashMap<String, Function> =
         funcs.iter().map(|f| (f.name.clone(), f.clone())).collect();
-    let structs_map: HashMap<String, StructDef> =
-        structs.iter().map(|s| (s.name.clone(), s.clone())).collect();
-    
-    
+    let structs_map: HashMap<String, StructDef> = structs
+        .iter()
+        .map(|s| (s.name.clone(), s.clone()))
+        .collect();
+
     let graph = build_call_graph(&func_map, &structs_map);
 
     let mut reachable: HashSet<String> = HashSet::new();
     let mut work: Vec<String> = funcs
         .iter()
-        .filter(|f| (f.is_pub && get_namespace(&f.name) == "") || f.is_extern || f.name == "task::fox_run_task" || f.name == "main")
+        .filter(|f| {
+            (f.is_pub && get_namespace(&f.name) == "")
+                || f.is_extern
+                || f.name == "task::fox_run_task"
+                || f.name == "main"
+        })
         .map(|f| f.name.clone())
         .collect();
 
     let mut global_callees = HashSet::new();
     let mut tmp_sym = HashMap::new();
     for c in consts {
-        collect_callees_expr(&c.value, &mut tmp_sym, &func_map, &structs_map, &mut global_callees);
+        collect_callees_expr(
+            &c.value,
+            &mut tmp_sym,
+            &func_map,
+            &structs_map,
+            &mut global_callees,
+        );
     }
     work.extend(global_callees);
 
     // Keep Vec constructors alive since they are needed for default values of omitted fields
     for s in structs {
         let name = &s.name;
-        if name.starts_with("vec::Vec") || name.contains("vec::Vec") || name.contains("std_collections_vec_Vec") {
+        if name.starts_with("vec::Vec")
+            || name.contains("vec::Vec")
+            || name.contains("std_collections_vec_Vec")
+        {
             let func_name = format!("{}::new", name);
             if func_map.contains_key(&func_name) {
                 work.push(func_name);
@@ -3026,7 +4502,10 @@ pub fn dead_code_eliminate(
         }
     }
 
-    funcs.into_iter().filter(|f| reachable.contains(&f.name)).collect()
+    funcs
+        .into_iter()
+        .filter(|f| reachable.contains(&f.name))
+        .collect()
 }
 
 pub fn extract_tuple_types(ty: &str, out: &mut HashSet<String>) {
@@ -3038,8 +4517,8 @@ pub fn extract_tuple_types(ty: &str, out: &mut HashSet<String>) {
     } else if ty.starts_with("fn(") {
         if let Some(start) = ty.find('(') {
             if let Some(end) = ty.rfind("):") {
-                let params = &ty[start+1..end];
-                let ret = &ty[end+2..];
+                let params = &ty[start + 1..end];
+                let ret = &ty[end + 2..];
                 extract_tuple_types(ret, out);
                 for p in split_types(params) {
                     extract_tuple_types(&p, out);
@@ -3047,7 +4526,7 @@ pub fn extract_tuple_types(ty: &str, out: &mut HashSet<String>) {
             }
         }
     } else if ty.starts_with('(') && ty.ends_with(')') {
-        let inner = &ty[1..ty.len()-1];
+        let inner = &ty[1..ty.len() - 1];
         let parts = split_types(inner);
         if parts.iter().all(|p| !p.is_empty()) {
             out.insert(ty.to_string());
@@ -3057,7 +4536,7 @@ pub fn extract_tuple_types(ty: &str, out: &mut HashSet<String>) {
         }
     } else if let Some(start) = ty.find('<') {
         if ty.ends_with('>') {
-            let inner = &ty[start+1..ty.len()-1];
+            let inner = &ty[start + 1..ty.len() - 1];
             for p in split_types(inner) {
                 extract_tuple_types(&p, out);
             }
@@ -3065,9 +4544,8 @@ pub fn extract_tuple_types(ty: &str, out: &mut HashSet<String>) {
     }
 }
 
-
 pub fn make_tuple_struct_def(ty: &str) -> StructDef {
-    let inner = &ty[1..ty.len()-1];
+    let inner = &ty[1..ty.len() - 1];
     let parts = split_types(inner);
     let mut fields = Vec::new();
     for (idx, part_ty) in parts.iter().enumerate() {
@@ -3189,19 +4667,31 @@ pub fn collect_type_strings_expr(expr: &Expr, out: &mut HashSet<String>) {
         Expr::If(cond, then_b, else_b) => {
             collect_type_strings_expr(cond, out);
             let (t_stmts, t_val) = &**then_b;
-            for s in t_stmts { collect_type_strings_stmt(s, out); }
-            if let Some(v) = t_val { collect_type_strings_expr(v, out); }
+            for s in t_stmts {
+                collect_type_strings_stmt(s, out);
+            }
+            if let Some(v) = t_val {
+                collect_type_strings_expr(v, out);
+            }
             if let Some(eb) = else_b {
                 let (e_stmts, e_val) = &**eb;
-                for s in e_stmts { collect_type_strings_stmt(s, out); }
-                if let Some(v) = e_val { collect_type_strings_expr(v, out); }
+                for s in e_stmts {
+                    collect_type_strings_stmt(s, out);
+                }
+                if let Some(v) = e_val {
+                    collect_type_strings_expr(v, out);
+                }
             }
         }
         Expr::Match(target, arms) => {
             collect_type_strings_expr(target, out);
             for arm in arms {
-                for s in &arm.body { collect_type_strings_stmt(s, out); }
-                if let Some(v) = &arm.val { collect_type_strings_expr(v, out); }
+                for s in &arm.body {
+                    collect_type_strings_stmt(s, out);
+                }
+                if let Some(v) = &arm.val {
+                    collect_type_strings_expr(v, out);
+                }
             }
         }
         Expr::ClosureInstantiate(_, env_name, captured) => {

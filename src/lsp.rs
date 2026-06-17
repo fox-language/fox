@@ -61,6 +61,7 @@ impl Backend {
 
             let panic_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 crate::compile_only_for_diagnostics(&path_clone);
+                crate::parse_for_lsp(&path_clone);
             }));
 
             if let Err(payload) = &panic_result {
@@ -190,7 +191,12 @@ impl LanguageServer for Backend {
     ) -> Result<Option<GotoDefinitionResponse>> {
         let uri = params.text_document_position_params.text_document.uri;
         let pos = params.text_document_position_params.position;
-        self.log(format!("goto_definition: {}:{}:{}", uri, pos.line, pos.character));
+        self.log(format!(
+            "goto_definition: {}:{}:{}",
+            uri,
+            pos.line + 1,
+            pos.character + 1
+        ));
 
         let path = match uri.to_file_path() {
             Ok(p) => std::fs::canonicalize(&p).unwrap_or(p),
@@ -220,29 +226,28 @@ impl LanguageServer for Backend {
 
         let location = {
             let cache = crate::get_ast_cache().read().unwrap();
-
-            eprintln!("DEBUG goto_definition: offset={}, path={:?}, funcs={}", offset, path, cache.funcs.len());
-
             let mut result = None;
+            let mut matched_func: Option<&Function> = None;
+
             'outer: for func in &cache.funcs {
-                let func_span = crate::ast::get_span(func);
-                let func_file = crate::ast::get_file(func);
-                eprintln!("DEBUG goto_definition: func={:?}, span={:?}, file={:?}", func.name, func_span, func_file);
-                if let (Some(span), Some(file)) = (crate::ast::get_span(func), crate::ast::get_file(func)) {
+                if let (Some(span), Some(file)) =
+                    (crate::ast::get_span(func), crate::ast::get_file(func))
+                {
                     let file_matches = if let Ok(c_file) = std::fs::canonicalize(&file) {
                         c_file == path
                     } else {
                         file == path.to_string_lossy()
                     };
                     if file_matches && span.start <= offset && offset <= span.end {
-                        eprintln!("DEBUG goto_definition: matched func {}, span={:?}..{:?}", func.name, span.start, span.end);
+                        matched_func = Some(func);
                         let file_str = path.to_string_lossy();
                         for stmt in &func.body {
                             if let Some(expr) = walk_stmt(stmt, offset, &path, &file_str) {
-                                eprintln!("DEBUG goto_definition: found expr={:?}", expr);
                                 let loc = match expr {
                                     Expr::Identifier(ref name) => {
-                                        if let Some(local_span) = find_local_decl(func, name, offset) {
+                                        if let Some(local_span) =
+                                            find_local_decl(func, name, offset)
+                                        {
                                             Some(Location::new(
                                                 uri.clone(),
                                                 Range::new(
@@ -250,39 +255,60 @@ impl LanguageServer for Backend {
                                                     converter.offset_to_lsp(local_span.end),
                                                 ),
                                             ))
-                                        } else if let Some((const_span, const_file)) = find_global_const(&cache.consts, name) {
-                                            Url::from_file_path(&const_file).ok().and_then(|target_url| {
-                                                let target_content = std::fs::read_to_string(&const_file).unwrap_or_default();
-                                                let target_conv = PositionConverter::new(&target_content);
-                                                Some(Location::new(
-                                                    target_url,
-                                                    Range::new(
-                                                        target_conv.offset_to_lsp(const_span.start),
-                                                        target_conv.offset_to_lsp(const_span.end),
-                                                    ),
-                                                ))
-                                            })
-                                        } else if let Some((struct_span, struct_file)) = find_struct(&cache.structs, name) {
-                                            Url::from_file_path(&struct_file).ok().and_then(|target_url| {
-                                                let target_content = std::fs::read_to_string(&struct_file).unwrap_or_default();
-                                                let target_conv = PositionConverter::new(&target_content);
-                                                Some(Location::new(
-                                                    target_url,
-                                                    Range::new(
-                                                        target_conv.offset_to_lsp(struct_span.start),
-                                                        target_conv.offset_to_lsp(struct_span.end),
-                                                    ),
-                                                ))
-                                            })
+                                        } else if let Some((const_span, const_file)) =
+                                            find_global_const(&cache.consts, name)
+                                        {
+                                            Url::from_file_path(&const_file).ok().and_then(
+                                                |target_url| {
+                                                    let target_content =
+                                                        std::fs::read_to_string(&const_file)
+                                                            .unwrap_or_default();
+                                                    let target_conv =
+                                                        PositionConverter::new(&target_content);
+                                                    Some(Location::new(
+                                                        target_url,
+                                                        Range::new(
+                                                            target_conv
+                                                                .offset_to_lsp(const_span.start),
+                                                            target_conv
+                                                                .offset_to_lsp(const_span.end),
+                                                        ),
+                                                    ))
+                                                },
+                                            )
+                                        } else if let Some((struct_span, struct_file)) =
+                                            find_struct(&cache.structs, name)
+                                        {
+                                            Url::from_file_path(&struct_file).ok().and_then(
+                                                |target_url| {
+                                                    let target_content =
+                                                        std::fs::read_to_string(&struct_file)
+                                                            .unwrap_or_default();
+                                                    let target_conv =
+                                                        PositionConverter::new(&target_content);
+                                                    Some(Location::new(
+                                                        target_url,
+                                                        Range::new(
+                                                            target_conv
+                                                                .offset_to_lsp(struct_span.start),
+                                                            target_conv
+                                                                .offset_to_lsp(struct_span.end),
+                                                        ),
+                                                    ))
+                                                },
+                                            )
                                         } else {
                                             None
                                         }
                                     }
-                                    Expr::Call(ref name, _) => {
-                                        find_function(&cache.funcs, name).and_then(|(fn_span, fn_file)| {
+                                    Expr::Call(ref name, _) => find_function(&cache.funcs, name)
+                                        .and_then(|(fn_span, fn_file)| {
                                             Url::from_file_path(&fn_file).ok().map(|target_url| {
-                                                let target_content = std::fs::read_to_string(&fn_file).unwrap_or_default();
-                                                let target_conv = PositionConverter::new(&target_content);
+                                                let target_content =
+                                                    std::fs::read_to_string(&fn_file)
+                                                        .unwrap_or_default();
+                                                let target_conv =
+                                                    PositionConverter::new(&target_content);
                                                 Location::new(
                                                     target_url,
                                                     Range::new(
@@ -291,38 +317,46 @@ impl LanguageServer for Backend {
                                                     ),
                                                 )
                                             })
+                                        }),
+                                    Expr::MethodCall(_, ref method_name, _) => find_function(
+                                        &cache.funcs,
+                                        method_name,
+                                    )
+                                    .and_then(|(fn_span, fn_file)| {
+                                        Url::from_file_path(&fn_file).ok().map(|target_url| {
+                                            let target_content = std::fs::read_to_string(&fn_file)
+                                                .unwrap_or_default();
+                                            let target_conv =
+                                                PositionConverter::new(&target_content);
+                                            Location::new(
+                                                target_url,
+                                                Range::new(
+                                                    target_conv.offset_to_lsp(fn_span.start),
+                                                    target_conv.offset_to_lsp(fn_span.end),
+                                                ),
+                                            )
                                         })
-                                    }
-                                    Expr::MethodCall(_, ref method_name, _) => {
-                                        find_function(&cache.funcs, method_name).and_then(|(fn_span, fn_file)| {
-                                            Url::from_file_path(&fn_file).ok().map(|target_url| {
-                                                let target_content = std::fs::read_to_string(&fn_file).unwrap_or_default();
-                                                let target_conv = PositionConverter::new(&target_content);
-                                                Location::new(
-                                                    target_url,
-                                                    Range::new(
-                                                        target_conv.offset_to_lsp(fn_span.start),
-                                                        target_conv.offset_to_lsp(fn_span.end),
-                                                    ),
-                                                )
-                                            })
+                                    }),
+                                    Expr::StructInit(ref name, _) => find_struct(
+                                        &cache.structs,
+                                        name,
+                                    )
+                                    .and_then(|(struct_span, struct_file)| {
+                                        Url::from_file_path(&struct_file).ok().map(|target_url| {
+                                            let target_content =
+                                                std::fs::read_to_string(&struct_file)
+                                                    .unwrap_or_default();
+                                            let target_conv =
+                                                PositionConverter::new(&target_content);
+                                            Location::new(
+                                                target_url,
+                                                Range::new(
+                                                    target_conv.offset_to_lsp(struct_span.start),
+                                                    target_conv.offset_to_lsp(struct_span.end),
+                                                ),
+                                            )
                                         })
-                                    }
-                                    Expr::StructInit(ref name, _) => {
-                                        find_struct(&cache.structs, name).and_then(|(struct_span, struct_file)| {
-                                            Url::from_file_path(&struct_file).ok().map(|target_url| {
-                                                let target_content = std::fs::read_to_string(&struct_file).unwrap_or_default();
-                                                let target_conv = PositionConverter::new(&target_content);
-                                                Location::new(
-                                                    target_url,
-                                                    Range::new(
-                                                        target_conv.offset_to_lsp(struct_span.start),
-                                                        target_conv.offset_to_lsp(struct_span.end),
-                                                    ),
-                                                )
-                                            })
-                                        })
-                                    }
+                                    }),
                                     _ => None,
                                 };
                                 if let Some(loc) = loc {
@@ -334,6 +368,76 @@ impl LanguageServer for Backend {
                     }
                 }
             }
+
+            if result.is_none() {
+                if let Some((name, _start, _end)) = symbol_at_offset(&content, offset) {
+                    if let Some(func) = matched_func {
+                        if let Some(local_span) = find_local_decl(func, &name, offset) {
+                            result = Some(Location::new(
+                                uri.clone(),
+                                Range::new(
+                                    converter.offset_to_lsp(local_span.start),
+                                    converter.offset_to_lsp(local_span.end),
+                                ),
+                            ));
+                        }
+                    }
+                    if result.is_none() {
+                        result = find_global_const(&cache.consts, &name).and_then(
+                            |(const_span, const_file)| {
+                                Url::from_file_path(&const_file).ok().map(|target_url| {
+                                    let target_content =
+                                        std::fs::read_to_string(&const_file).unwrap_or_default();
+                                    let target_conv = PositionConverter::new(&target_content);
+                                    Location::new(
+                                        target_url,
+                                        Range::new(
+                                            target_conv.offset_to_lsp(const_span.start),
+                                            target_conv.offset_to_lsp(const_span.end),
+                                        ),
+                                    )
+                                })
+                            },
+                        );
+                    }
+                    if result.is_none() {
+                        result = find_struct(&cache.structs, &name).and_then(
+                            |(struct_span, struct_file)| {
+                                Url::from_file_path(&struct_file).ok().map(|target_url| {
+                                    let target_content =
+                                        std::fs::read_to_string(&struct_file).unwrap_or_default();
+                                    let target_conv = PositionConverter::new(&target_content);
+                                    Location::new(
+                                        target_url,
+                                        Range::new(
+                                            target_conv.offset_to_lsp(struct_span.start),
+                                            target_conv.offset_to_lsp(struct_span.end),
+                                        ),
+                                    )
+                                })
+                            },
+                        );
+                    }
+                    if result.is_none() {
+                        result =
+                            find_function(&cache.funcs, &name).and_then(|(fn_span, fn_file)| {
+                                Url::from_file_path(&fn_file).ok().map(|target_url| {
+                                    let target_content =
+                                        std::fs::read_to_string(&fn_file).unwrap_or_default();
+                                    let target_conv = PositionConverter::new(&target_content);
+                                    Location::new(
+                                        target_url,
+                                        Range::new(
+                                            target_conv.offset_to_lsp(fn_span.start),
+                                            target_conv.offset_to_lsp(fn_span.end),
+                                        ),
+                                    )
+                                })
+                            });
+                    }
+                }
+            }
+
             result
         };
 
@@ -348,7 +452,12 @@ impl LanguageServer for Backend {
     async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {
         let uri = params.text_document_position_params.text_document.uri;
         let pos = params.text_document_position_params.position;
-        self.log(format!("hover: {}:{}:{}", uri, pos.line, pos.character));
+        self.log(format!(
+            "hover: {}:{}:{}",
+            uri,
+            pos.line + 1,
+            pos.character + 1
+        ));
 
         let path = match uri.to_file_path() {
             Ok(p) => std::fs::canonicalize(&p).unwrap_or(p),
@@ -372,68 +481,198 @@ impl LanguageServer for Backend {
 
         let cache = crate::get_ast_cache().read().unwrap();
 
-        let funcs_map: HashMap<_, _> = cache.funcs.iter().map(|f| (f.name.clone(), f.clone())).collect();
-        let structs_map: HashMap<_, _> = cache.structs.iter().map(|s| (s.name.clone(), s.clone())).collect();
+        let funcs_map: HashMap<_, _> = cache
+            .funcs
+            .iter()
+            .map(|f| (f.name.clone(), f.clone()))
+            .collect();
+        let structs_map: HashMap<_, _> = cache
+            .structs
+            .iter()
+            .map(|s| (s.name.clone(), s.clone()))
+            .collect();
 
+        let mut matched_func: Option<&Function> = None;
         for func in &cache.funcs {
-            if let (Some(span), Some(file)) = (crate::ast::get_span(func), crate::ast::get_file(func)) {
+            if let (Some(span), Some(file)) =
+                (crate::ast::get_span(func), crate::ast::get_file(func))
+            {
                 let file_matches = if let Ok(c_file) = std::fs::canonicalize(&file) {
                     c_file == path
                 } else {
                     file == path.to_string_lossy()
                 };
                 if file_matches && span.start <= offset && offset <= span.end {
+                    matched_func = Some(func);
                     let file_str = path.to_string_lossy();
                     for stmt in &func.body {
                         if let Some(expr) = walk_stmt(stmt, offset, &path, &file_str) {
-                                let mut hover_text = String::new();
-                                match expr {
-                                    Expr::Identifier(ref name) => {
-                                        let sym = get_local_symbols(func, offset, &funcs_map, &structs_map);
-                                        if let Some(ty_str) = sym.get(name) {
-                                            hover_text = format!("```fox\nlet {}: {}\n```", name, ty_str);
-                                        } else if let Some(c) = cache.consts.iter().find(|c| c.name == *name || c.name.ends_with(&format!("::{}", name))) {
-                                            hover_text = format!("```fox\nconst {}: {}\n```", c.name, c.ty);
-                                        } else if let Some(s) = cache.structs.iter().find(|s| s.name == *name || s.name.ends_with(&format!("::{}", name))) {
-                                            let fields_str = s.fields.iter().map(|f| format!("    {}: {}", f.name, f.ty)).collect::<Vec<_>>().join(",\n");
-                                            hover_text = format!("```fox\nstruct {} {{\n{}\n}}\n```", s.name, fields_str);
-                                        }
-                                    }
-                                    Expr::Call(ref name, _) => {
-                                        if let Some(f) = cache.funcs.iter().find(|f| f.name == *name || f.name.ends_with(&format!("::{}", name))) {
-                                            let params_str = f.params.iter().map(|p| format!("{}: {}", p.name, p.ty)).collect::<Vec<_>>().join(", ");
-                                            hover_text = format!("```fox\nfn {}({}) -> {}\n```", f.name, params_str, f.return_ty);
-                                        }
-                                    }
-                                    Expr::MethodCall(_, ref method_name, _) => {
-                                        if let Some(f) = cache.funcs.iter().find(|f| f.name == *method_name || f.name.ends_with(&format!("::{}", method_name))) {
-                                            let params_str = f.params.iter().map(|p| format!("{}: {}", p.name, p.ty)).collect::<Vec<_>>().join(", ");
-                                            hover_text = format!("```fox\nfn {}({}) -> {}\n```", f.name, params_str, f.return_ty);
-                                        }
-                                    }
-                                    Expr::StructInit(ref name, _) => {
-                                        if let Some(s) = cache.structs.iter().find(|s| s.name == *name || s.name.ends_with(&format!("::{}", name))) {
-                                            let fields_str = s.fields.iter().map(|f| format!("    {}: {}", f.name, f.ty)).collect::<Vec<_>>().join(",\n");
-                                            hover_text = format!("```fox\nstruct {} {{\n{}\n}}\n```", s.name, fields_str);
-                                        }
-                                    }
-                                    _ => {
-                                        let sym = get_local_symbols(func, offset, &funcs_map, &structs_map);
-                                        let ty_str = crate::type_checker::get_expr_type(&expr, &sym, &funcs_map, &structs_map);
-                                        hover_text = format!("```fox\ntype: {}\n```", ty_str);
+                            let mut hover_text = String::new();
+                            match expr {
+                                Expr::Identifier(ref name) => {
+                                    let sym =
+                                        get_local_symbols(func, offset, &funcs_map, &structs_map);
+                                    if let Some(ty_str) = sym.get(name) {
+                                        hover_text =
+                                            format!("```fox\nlet {}: {}\n```", name, ty_str);
+                                    } else if let Some(c) = cache.consts.iter().find(|c| {
+                                        c.name == *name || c.name.ends_with(&format!("::{}", name))
+                                    }) {
+                                        hover_text =
+                                            format!("```fox\nconst {}: {}\n```", c.name, c.ty);
+                                    } else if let Some(s) = cache.structs.iter().find(|s| {
+                                        s.name == *name || s.name.ends_with(&format!("::{}", name))
+                                    }) {
+                                        let fields_str = s
+                                            .fields
+                                            .iter()
+                                            .map(|f| format!("    {}: {}", f.name, f.ty))
+                                            .collect::<Vec<_>>()
+                                            .join(",\n");
+                                        hover_text = format!(
+                                            "```fox\nstruct {} {{\n{}\n}}\n```",
+                                            s.name, fields_str
+                                        );
                                     }
                                 }
+                                Expr::Call(ref name, _) => {
+                                    if let Some(f) = cache.funcs.iter().find(|f| {
+                                        f.name == *name || f.name.ends_with(&format!("::{}", name))
+                                    }) {
+                                        let params_str = f
+                                            .params
+                                            .iter()
+                                            .map(|p| format!("{}: {}", p.name, p.ty))
+                                            .collect::<Vec<_>>()
+                                            .join(", ");
+                                        hover_text = format!(
+                                            "```fox\nfn {}({}) -> {}\n```",
+                                            f.name, params_str, f.return_ty
+                                        );
+                                    }
+                                }
+                                Expr::MethodCall(_, ref method_name, _) => {
+                                    if let Some(f) = cache.funcs.iter().find(|f| {
+                                        f.name == *method_name
+                                            || f.name.ends_with(&format!("::{}", method_name))
+                                    }) {
+                                        let params_str = f
+                                            .params
+                                            .iter()
+                                            .map(|p| format!("{}: {}", p.name, p.ty))
+                                            .collect::<Vec<_>>()
+                                            .join(", ");
+                                        hover_text = format!(
+                                            "```fox\nfn {}({}) -> {}\n```",
+                                            f.name, params_str, f.return_ty
+                                        );
+                                    }
+                                }
+                                Expr::StructInit(ref name, _) => {
+                                    if let Some(s) = cache.structs.iter().find(|s| {
+                                        s.name == *name || s.name.ends_with(&format!("::{}", name))
+                                    }) {
+                                        let fields_str = s
+                                            .fields
+                                            .iter()
+                                            .map(|f| format!("    {}: {}", f.name, f.ty))
+                                            .collect::<Vec<_>>()
+                                            .join(",\n");
+                                        hover_text = format!(
+                                            "```fox\nstruct {} {{\n{}\n}}\n```",
+                                            s.name, fields_str
+                                        );
+                                    }
+                                }
+                                _ => {
+                                    let sym =
+                                        get_local_symbols(func, offset, &funcs_map, &structs_map);
+                                    let ty_str = crate::type_checker::get_expr_type(
+                                        &expr,
+                                        &sym,
+                                        &funcs_map,
+                                        &structs_map,
+                                    );
+                                    hover_text = format!("```fox\ntype: {}\n```", ty_str);
+                                }
+                            }
 
-                                if !hover_text.is_empty() {
-                                    return Ok(Some(Hover {
-                                        contents: HoverContents::Scalar(MarkedString::String(hover_text)),
-                                        range: None,
-                                    }));
-                                }
+                            if !hover_text.is_empty() {
+                                return Ok(Some(Hover {
+                                    contents: HoverContents::Scalar(MarkedString::String(
+                                        hover_text,
+                                    )),
+                                    range: None,
+                                }));
                             }
                         }
                     }
                 }
+            }
+        }
+
+        // Token-based fallback for symbols the AST walker missed (e.g. method calls
+        // without expression spans or imported functions).
+        if let Some((name, _start, _end)) = symbol_at_offset(&content, offset) {
+            let mut hover_text = String::new();
+            if let Some(ref func) = matched_func {
+                if find_local_decl(func, &name, offset).is_some() {
+                    let sym = get_local_symbols(func, offset, &funcs_map, &structs_map);
+                    if let Some(ty_str) = sym.get(&name) {
+                        hover_text = format!("```fox\nlet {}: {}\n```", name, ty_str);
+                    } else {
+                        hover_text = format!("```fox\nlet {}\n```", name);
+                    }
+                }
+            }
+            if hover_text.is_empty() {
+                if let Some(c) = cache
+                    .consts
+                    .iter()
+                    .find(|c| c.name == name || c.name.ends_with(&format!("::{}", name)))
+                {
+                    hover_text = format!("```fox\nconst {}: {}\n```", c.name, c.ty);
+                }
+            }
+            if hover_text.is_empty() {
+                if let Some(s) = cache
+                    .structs
+                    .iter()
+                    .find(|s| s.name == name || s.name.ends_with(&format!("::{}", name)))
+                {
+                    let fields_str = s
+                        .fields
+                        .iter()
+                        .map(|f| format!("    {}: {}", f.name, f.ty))
+                        .collect::<Vec<_>>()
+                        .join(",\n");
+                    hover_text = format!("```fox\nstruct {} {{\n{}\n}}\n```", s.name, fields_str);
+                }
+            }
+            if hover_text.is_empty() {
+                if let Some(f) = cache
+                    .funcs
+                    .iter()
+                    .find(|f| f.name == name || f.name.ends_with(&format!("::{}", name)))
+                {
+                    let params_str = f
+                        .params
+                        .iter()
+                        .map(|p| format!("{}: {}", p.name, p.ty))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    hover_text = format!(
+                        "```fox\nfn {}({}) -> {}\n```",
+                        f.name, params_str, f.return_ty
+                    );
+                }
+            }
+            if !hover_text.is_empty() {
+                return Ok(Some(Hover {
+                    contents: HoverContents::Scalar(MarkedString::String(hover_text)),
+                    range: None,
+                }));
+            }
         }
 
         self.log("hover: no result found".to_string());
@@ -637,7 +876,12 @@ impl PositionConverter {
     }
 }
 
-fn check_span(span: Option<crate::ast::Span>, offset: usize, file_path: &Path, node_file: &Option<String>) -> bool {
+fn check_span(
+    span: Option<crate::ast::Span>,
+    offset: usize,
+    file_path: &Path,
+    node_file: &Option<String>,
+) -> bool {
     if let (Some(s), Some(nf)) = (span, node_file.as_ref()) {
         if let Ok(c_file) = std::fs::canonicalize(nf) {
             if let Ok(c_fp) = std::fs::canonicalize(file_path) {
@@ -658,7 +902,7 @@ fn check_expr_span(expr: &Expr, offset: usize, file_path: &Path, _file_str: &str
         let expr_file = crate::ast::get_file(expr);
         check_span(Some(span), offset, file_path, &expr_file)
     } else {
-        true
+        false
     }
 }
 
@@ -668,9 +912,8 @@ fn walk_expr(expr: &Expr, offset: usize, file_path: &Path, file_str: &str) -> Op
     }
 
     match expr {
-        Expr::Binary(l, _, r) => {
-            walk_expr(l, offset, file_path, file_str).or_else(|| walk_expr(r, offset, file_path, file_str))
-        }
+        Expr::Binary(l, _, r) => walk_expr(l, offset, file_path, file_str)
+            .or_else(|| walk_expr(r, offset, file_path, file_str)),
         Expr::Call(_, args) => {
             for arg in args {
                 if let Some(res) = walk_expr(arg, offset, file_path, file_str) {
@@ -690,9 +933,7 @@ fn walk_expr(expr: &Expr, offset: usize, file_path: &Path, file_str: &str) -> Op
             }
             None
         }
-        Expr::FieldAccess(obj, _) => {
-            walk_expr(obj, offset, file_path, file_str)
-        }
+        Expr::FieldAccess(obj, _) => walk_expr(obj, offset, file_path, file_str),
         Expr::StructInit(_, fields) => {
             for (_, fexpr) in fields {
                 if let Some(res) = walk_expr(fexpr, offset, file_path, file_str) {
@@ -701,9 +942,8 @@ fn walk_expr(expr: &Expr, offset: usize, file_path: &Path, file_str: &str) -> Op
             }
             None
         }
-        Expr::IndexAccess(arr, idx) => {
-            walk_expr(arr, offset, file_path, file_str).or_else(|| walk_expr(idx, offset, file_path, file_str))
-        }
+        Expr::IndexAccess(arr, idx) => walk_expr(arr, offset, file_path, file_str)
+            .or_else(|| walk_expr(idx, offset, file_path, file_str)),
         Expr::New(_, args) => {
             for arg in args {
                 if let Some(res) = walk_expr(arg, offset, file_path, file_str) {
@@ -787,12 +1027,8 @@ fn walk_expr(expr: &Expr, offset: usize, file_path: &Path, file_str: &str) -> Op
             }
             None
         }
-        Expr::Cast(e, _) => {
-            walk_expr(e, offset, file_path, file_str)
-        }
-        Expr::Spread(e) => {
-            walk_expr(e, offset, file_path, file_str)
-        }
+        Expr::Cast(e, _) => walk_expr(e, offset, file_path, file_str),
+        Expr::Spread(e) => walk_expr(e, offset, file_path, file_str),
         Expr::Tuple(exprs) => {
             for e in exprs {
                 if let Some(res) = walk_expr(e, offset, file_path, file_str) {
@@ -821,7 +1057,8 @@ fn walk_expr(expr: &Expr, offset: usize, file_path: &Path, file_str: &str) -> Op
             None
         }
         _ => None,
-    }.or(Some(expr.clone()))
+    }
+    .or(Some(expr.clone()))
 }
 
 fn walk_stmt(stmt: &Stmt, offset: usize, file_path: &Path, file_str: &str) -> Option<Expr> {
@@ -843,14 +1080,11 @@ fn walk_stmt(stmt: &Stmt, offset: usize, file_path: &Path, file_str: &str) -> Op
         }
         Stmt::Assign(_, expr) => walk_expr(expr, offset, file_path, file_str),
         Stmt::AssignPlus(_, expr) => walk_expr(expr, offset, file_path, file_str),
-        Stmt::AssignIndex(arr, idx, val) => {
-            walk_expr(arr, offset, file_path, file_str)
-                .or_else(|| walk_expr(idx, offset, file_path, file_str))
-                .or_else(|| walk_expr(val, offset, file_path, file_str))
-        }
-        Stmt::AssignField(obj, _, val) => {
-            walk_expr(obj, offset, file_path, file_str).or_else(|| walk_expr(val, offset, file_path, file_str))
-        }
+        Stmt::AssignIndex(arr, idx, val) => walk_expr(arr, offset, file_path, file_str)
+            .or_else(|| walk_expr(idx, offset, file_path, file_str))
+            .or_else(|| walk_expr(val, offset, file_path, file_str)),
+        Stmt::AssignField(obj, _, val) => walk_expr(obj, offset, file_path, file_str)
+            .or_else(|| walk_expr(val, offset, file_path, file_str)),
         Stmt::If(cond, then_b, else_b) => {
             if let Some(res) = walk_expr(cond, offset, file_path, file_str) {
                 return Some(res);
@@ -899,7 +1133,12 @@ fn find_local_decl(func: &Function, name: &str, ref_offset: usize) -> Option<cra
     }
 
     let mut found_span = None;
-    fn check_stmts(stmts: &[Stmt], name: &str, ref_offset: usize, found: &mut Option<crate::ast::Span>) {
+    fn check_stmts(
+        stmts: &[Stmt],
+        name: &str,
+        ref_offset: usize,
+        found: &mut Option<crate::ast::Span>,
+    ) {
         for stmt in stmts {
             if let Some(span) = crate::ast::get_span(stmt) {
                 if span.start >= ref_offset {
@@ -1035,9 +1274,43 @@ fn get_local_symbols(
     sym
 }
 
+fn symbol_at_offset(source: &str, offset: usize) -> Option<(String, usize, usize)> {
+    // Find the identifier (or number) that contains the given byte offset.
+    let bytes = source.as_bytes();
+    if offset >= bytes.len() {
+        return None;
+    }
+    let c = source[offset..].chars().next()?;
+    if !c.is_alphanumeric() && c != '_' {
+        return None;
+    }
+    let start = source[..offset]
+        .char_indices()
+        .rev()
+        .take_while(|(_, c)| c.is_alphanumeric() || *c == '_')
+        .last()
+        .map(|(i, _)| i)
+        .unwrap_or(offset);
+    let end = source[offset..]
+        .char_indices()
+        .take_while(|(_, c)| c.is_alphanumeric() || *c == '_')
+        .last()
+        .map(|(i, c)| offset + i + c.len_utf8())
+        .unwrap_or(offset + c.len_utf8());
+    if start < end {
+        Some((source[start..end].to_string(), start, end))
+    } else {
+        None
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // The span/file tables are global mutable state, so LSP tests must run
+    // serially.  Use an async mutex because the tests themselves are async.
+    static TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
     #[test]
     fn test_position_converter() {
@@ -1080,6 +1353,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_hover_local_var() {
+        let _guard = TEST_LOCK.lock().await;
         let (service, _socket) = LspService::new(|client| Backend {
             client,
             documents: RwLock::new(HashMap::new()),
@@ -1089,7 +1363,11 @@ mod tests {
         let test_path = PathBuf::from("/tmp/test_hover.fox");
         let uri = Url::from_file_path(&test_path).unwrap();
         let source = "fn main(x: i32) { x; }".to_string();
-        backend.documents.write().unwrap().insert(uri.clone(), source.clone());
+        backend
+            .documents
+            .write()
+            .unwrap()
+            .insert(uri.clone(), source.clone());
 
         crate::diagnostics::CURRENT_FILE.with(|cf| {
             *cf.borrow_mut() = Some("/tmp/test_hover.fox".to_string());
@@ -1106,29 +1384,40 @@ mod tests {
             parent_struct: None,
             name: "main".to_string(),
             generic: crate::ast::GenericParams { params: vec![] },
-            params: vec![
-                crate::ast::Param {
-                    name: "x".to_string(),
-                    ty: crate::ast::Type::I32,
-                    is_variadic: false,
-                },
-            ],
+            params: vec![crate::ast::Param {
+                name: "x".to_string(),
+                ty: crate::ast::Type::I32,
+                is_variadic: false,
+            }],
             return_ty: crate::ast::Type::Void,
-            body: vec![
-                Stmt::ExprStmt(Expr::Identifier("x".to_string())),
-            ],
+            body: vec![Stmt::ExprStmt(Expr::Identifier("x".to_string()))],
             attributes: vec![],
         };
         funcs.push(f);
 
-        let f_span = crate::ast::Span { start: 0, end: 22, line: 1, column: 1 };
+        let f_span = crate::ast::Span {
+            start: 0,
+            end: 22,
+            line: 1,
+            column: 1,
+        };
         crate::ast::register_span(&funcs[0], f_span);
 
-        let stmt_span = crate::ast::Span { start: 18, end: 20, line: 1, column: 18 };
+        let stmt_span = crate::ast::Span {
+            start: 18,
+            end: 20,
+            line: 1,
+            column: 18,
+        };
         crate::ast::register_span(&funcs[0].body[0], stmt_span);
 
         if let Stmt::ExprStmt(expr) = &funcs[0].body[0] {
-            let ident_span = crate::ast::Span { start: 18, end: 19, line: 1, column: 18 };
+            let ident_span = crate::ast::Span {
+                start: 18,
+                end: 19,
+                line: 1,
+                column: 18,
+            };
             crate::ast::register_span(expr, ident_span);
         }
 
@@ -1145,17 +1434,30 @@ mod tests {
                 text_document: TextDocumentIdentifier { uri: uri.clone() },
                 position: Position::new(0, 18),
             },
-            work_done_progress_params: WorkDoneProgressParams { work_done_token: None },
+            work_done_progress_params: WorkDoneProgressParams {
+                work_done_token: None,
+            },
         };
 
         let res = backend.hover(params).await.unwrap();
         assert!(res.is_some());
         if let Some(hover) = res {
             if let HoverContents::Scalar(MarkedString::String(text)) = &hover.contents {
-                assert!(text.contains("x"), "Hover text should contain variable name, got: {}", text);
-                assert!(text.contains("i32"), "Hover text should contain type i32, got: {}", text);
+                assert!(
+                    text.contains("x"),
+                    "Hover text should contain variable name, got: {}",
+                    text
+                );
+                assert!(
+                    text.contains("i32"),
+                    "Hover text should contain type i32, got: {}",
+                    text
+                );
             } else {
-                panic!("Expected Scalar String hover contents, got: {:?}", hover.contents);
+                panic!(
+                    "Expected Scalar String hover contents, got: {:?}",
+                    hover.contents
+                );
             }
         }
 
@@ -1167,6 +1469,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_document_symbol() {
+        let _guard = TEST_LOCK.lock().await;
         let (service, _socket) = LspService::new(|client| Backend {
             client,
             documents: RwLock::new(HashMap::new()),
@@ -1176,7 +1479,11 @@ mod tests {
         let cargo_toml_path = std::env::current_dir().unwrap().join("Cargo.toml");
         let uri = Url::from_file_path(&cargo_toml_path).unwrap();
         let source = "struct Point {\n    x: i32,\n    y: i32,\n}\n\nfn add(a: i32, b: i32) -> i32 {\n    a + b\n}\n".to_string();
-        backend.documents.write().unwrap().insert(uri.clone(), source.clone());
+        backend
+            .documents
+            .write()
+            .unwrap()
+            .insert(uri.clone(), source.clone());
 
         let mut structs = Vec::new();
         let mut funcs = Vec::new();
@@ -1214,10 +1521,20 @@ mod tests {
             *cf.borrow_mut() = Some(dummy_path.clone());
         });
 
-        let s_span = crate::ast::Span { start: 0, end: 42, line: 1, column: 1 };
+        let s_span = crate::ast::Span {
+            start: 0,
+            end: 42,
+            line: 1,
+            column: 1,
+        };
         crate::ast::register_span(&structs[0], s_span);
 
-        let f_span = crate::ast::Span { start: 44, end: 85, line: 6, column: 1 };
+        let f_span = crate::ast::Span {
+            start: 44,
+            end: 85,
+            line: 6,
+            column: 1,
+        };
         crate::ast::register_span(&funcs[0], f_span);
 
         {
@@ -1230,8 +1547,12 @@ mod tests {
 
         let params = DocumentSymbolParams {
             text_document: TextDocumentIdentifier { uri: uri.clone() },
-            partial_result_params: PartialResultParams { partial_result_token: None },
-            work_done_progress_params: WorkDoneProgressParams { work_done_token: None },
+            partial_result_params: PartialResultParams {
+                partial_result_token: None,
+            },
+            work_done_progress_params: WorkDoneProgressParams {
+                work_done_token: None,
+            },
         };
 
         let res = backend.document_symbol(params).await.unwrap();
@@ -1252,6 +1573,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_goto_definition_local_var() {
+        let _guard = TEST_LOCK.lock().await;
         let (service, _socket) = LspService::new(|client| Backend {
             client,
             documents: RwLock::new(HashMap::new()),
@@ -1261,7 +1583,11 @@ mod tests {
         let test_path = PathBuf::from("/tmp/test_goto.fox");
         let uri = Url::from_file_path(&test_path).unwrap();
         let source = "fn main(x: i32) { x; }".to_string();
-        backend.documents.write().unwrap().insert(uri.clone(), source.clone());
+        backend
+            .documents
+            .write()
+            .unwrap()
+            .insert(uri.clone(), source.clone());
 
         crate::diagnostics::CURRENT_FILE.with(|cf| {
             *cf.borrow_mut() = Some("/tmp/test_goto.fox".to_string());
@@ -1278,32 +1604,48 @@ mod tests {
             parent_struct: None,
             name: "main".to_string(),
             generic: crate::ast::GenericParams { params: vec![] },
-            params: vec![
-                crate::ast::Param {
-                    name: "x".to_string(),
-                    ty: crate::ast::Type::I32,
-                    is_variadic: false,
-                },
-            ],
+            params: vec![crate::ast::Param {
+                name: "x".to_string(),
+                ty: crate::ast::Type::I32,
+                is_variadic: false,
+            }],
             return_ty: crate::ast::Type::Void,
-            body: vec![
-                Stmt::ExprStmt(Expr::Identifier("x".to_string())),
-            ],
+            body: vec![Stmt::ExprStmt(Expr::Identifier("x".to_string()))],
             attributes: vec![],
         };
         funcs.push(f);
 
-        let f_span = crate::ast::Span { start: 0, end: 22, line: 1, column: 1 };
+        let f_span = crate::ast::Span {
+            start: 0,
+            end: 22,
+            line: 1,
+            column: 1,
+        };
         crate::ast::register_span(&funcs[0], f_span);
 
-        let param_span = crate::ast::Span { start: 12, end: 13, line: 0, column: 12 };
+        let param_span = crate::ast::Span {
+            start: 12,
+            end: 13,
+            line: 0,
+            column: 12,
+        };
         crate::ast::register_span(&funcs[0].params[0], param_span);
 
-        let stmt_span = crate::ast::Span { start: 18, end: 20, line: 1, column: 18 };
+        let stmt_span = crate::ast::Span {
+            start: 18,
+            end: 20,
+            line: 1,
+            column: 18,
+        };
         crate::ast::register_span(&funcs[0].body[0], stmt_span);
 
         if let Stmt::ExprStmt(expr) = &funcs[0].body[0] {
-            let ident_span = crate::ast::Span { start: 18, end: 19, line: 1, column: 18 };
+            let ident_span = crate::ast::Span {
+                start: 18,
+                end: 19,
+                line: 1,
+                column: 18,
+            };
             crate::ast::register_span(expr, ident_span);
         }
 
@@ -1320,14 +1662,24 @@ mod tests {
                 text_document: TextDocumentIdentifier { uri: uri.clone() },
                 position: Position::new(0, 18),
             },
-            work_done_progress_params: WorkDoneProgressParams { work_done_token: None },
-            partial_result_params: PartialResultParams { partial_result_token: None },
+            work_done_progress_params: WorkDoneProgressParams {
+                work_done_token: None,
+            },
+            partial_result_params: PartialResultParams {
+                partial_result_token: None,
+            },
         };
 
         let res = backend.goto_definition(params).await.unwrap();
-        assert!(res.is_some(), "goto_definition should find the parameter 'x'");
+        assert!(
+            res.is_some(),
+            "goto_definition should find the parameter 'x'"
+        );
         if let Some(GotoDefinitionResponse::Scalar(loc)) = res {
-            assert!(loc.range.start.character <= 18, "Definition should be at or before position 18");
+            assert!(
+                loc.range.start.character <= 18,
+                "Definition should be at or before position 18"
+            );
         } else {
             panic!("Expected Scalar goto definition response, got: {:?}", res);
         }
@@ -1340,6 +1692,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_goto_definition_with_compile() {
+        let _guard = TEST_LOCK.lock().await;
         let (service, _socket) = LspService::new(|client| Backend {
             client,
             documents: RwLock::new(HashMap::new()),
@@ -1357,21 +1710,16 @@ mod tests {
         let uri = Url::from_file_path(&test_file).unwrap();
 
         // Simulate did_open: store document, then validate
-        backend.documents.write().unwrap().insert(uri.clone(), source.to_string());
+        backend
+            .documents
+            .write()
+            .unwrap()
+            .insert(uri.clone(), source.to_string());
         backend.validate_document(uri.clone()).await;
 
         // Check what's in the cache
         {
-            let cache = crate::get_ast_cache().read().unwrap();
-            eprintln!("DEBUG: cache.funcs.len = {}", cache.funcs.len());
-            for f in &cache.funcs {
-                eprintln!("DEBUG:   func name = {:?}", f.name);
-                eprintln!("DEBUG:   func span = {:?}", crate::ast::get_span(f));
-                eprintln!("DEBUG:   func file = {:?}", crate::ast::get_file(f));
-                for (i, stmt) in f.body.iter().enumerate() {
-                    eprintln!("DEBUG:   stmt[{}] span = {:?}", i, crate::ast::get_span(stmt));
-                }
-            }
+            let _cache = crate::get_ast_cache().read().unwrap();
         }
 
         // Now test goto_definition at position of 'y' on the last line
@@ -1381,13 +1729,20 @@ mod tests {
                 text_document: TextDocumentIdentifier { uri: uri.clone() },
                 position: Position::new(2, 4),
             },
-            work_done_progress_params: WorkDoneProgressParams { work_done_token: None },
-            partial_result_params: PartialResultParams { partial_result_token: None },
+            work_done_progress_params: WorkDoneProgressParams {
+                work_done_token: None,
+            },
+            partial_result_params: PartialResultParams {
+                partial_result_token: None,
+            },
         };
 
         let res = backend.goto_definition(params).await.unwrap();
         // We expect to find the definition of 'y' at line 1 (let y: i32 = 42;)
-        assert!(res.is_some(), "goto_definition should find local var 'y' after compile");
+        assert!(
+            res.is_some(),
+            "goto_definition should find local var 'y' after compile"
+        );
 
         crate::clear_ast_cache();
         crate::diagnostics::clear_diagnostics();
@@ -1398,7 +1753,80 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_goto_definition_docs_main_ext_link() {
+        let _guard = TEST_LOCK.lock().await;
+        let (service, _socket) = LspService::new(|client| Backend {
+            client,
+            documents: RwLock::new(HashMap::new()),
+        });
+        let backend = service.inner();
+
+        let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| std::env::current_dir().unwrap());
+        let fox_path = manifest_dir.to_string_lossy().to_string();
+        unsafe {
+            std::env::set_var("FOX_PATH", &fox_path);
+        }
+
+        let test_file = manifest_dir.join("docs").join("main.fox");
+        let source = std::fs::read_to_string(&test_file).unwrap();
+        let uri = Url::from_file_path(&test_file).unwrap();
+
+        backend
+            .documents
+            .write()
+            .unwrap()
+            .insert(uri.clone(), source.clone());
+        backend.validate_document(uri.clone()).await;
+
+        {
+            let _cache = crate::get_ast_cache().read().unwrap();
+        }
+
+        // Line 238 (1-based) -> LSP line 237. 'ext_link' identifier starts around col 23.
+        let pos = Position::new(237, 27);
+        let params = GotoDefinitionParams {
+            text_document_position_params: TextDocumentPositionParams {
+                text_document: TextDocumentIdentifier { uri: uri.clone() },
+                position: pos,
+            },
+            work_done_progress_params: WorkDoneProgressParams {
+                work_done_token: None,
+            },
+            partial_result_params: PartialResultParams {
+                partial_result_token: None,
+            },
+        };
+
+        let res = backend.goto_definition(params).await.unwrap();
+        assert!(
+            res.is_some(),
+            "goto_definition should find ext_link at line 238"
+        );
+
+        let hover_params = HoverParams {
+            text_document_position_params: TextDocumentPositionParams {
+                text_document: TextDocumentIdentifier { uri: uri.clone() },
+                position: pos,
+            },
+            work_done_progress_params: WorkDoneProgressParams {
+                work_done_token: None,
+            },
+        };
+        let hover_res = backend.hover(hover_params).await.unwrap();
+        assert!(
+            hover_res.is_some(),
+            "hover should find ext_link at line 238"
+        );
+
+        crate::clear_ast_cache();
+        crate::diagnostics::clear_diagnostics();
+    }
+
+    #[tokio::test]
     async fn test_diagnostics() {
+        let _guard = TEST_LOCK.lock().await;
         let cargo_toml_path = std::env::current_dir().unwrap().join("Cargo.toml");
         let source = "fn add(a: i32, b: i32): i32 {\n    return a + b;\n}\n\nfn test_func(): i32 {\n    add(5, \"hello\");\n    return 1;\n}\n".to_string();
 
@@ -1411,7 +1839,10 @@ mod tests {
         crate::compile_only_for_diagnostics(&cargo_toml_path);
 
         let compiler_diags = crate::diagnostics::DIAGNOSTICS.with(|d| d.borrow().clone());
-        assert!(!compiler_diags.is_empty(), "Diagnostics should be generated");
+        assert!(
+            !compiler_diags.is_empty(),
+            "Diagnostics should be generated"
+        );
 
         let has_correct_path = compiler_diags.iter().any(|d| {
             if let Some(ref fp) = d.file_path {
@@ -1421,7 +1852,10 @@ mod tests {
                 false
             }
         });
-        assert!(has_correct_path, "Diagnostic should have the correct file path");
+        assert!(
+            has_correct_path,
+            "Diagnostic should have the correct file path"
+        );
 
         crate::diagnostics::clear_diagnostics();
         VFS.with(|vfs| {

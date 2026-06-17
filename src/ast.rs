@@ -8,7 +8,12 @@ pub struct Span {
 
 impl Span {
     pub fn new(start: usize, end: usize, line: usize, column: usize) -> Self {
-        Span { start, end, line, column }
+        Span {
+            start,
+            end,
+            line,
+            column,
+        }
     }
 }
 
@@ -43,6 +48,19 @@ pub fn register_span<T>(node: &T, span: Span) {
     if let Some(file) = current_file {
         get_file_table().write().unwrap().insert(addr, file);
     }
+}
+
+pub fn register_span_with_file<T>(node: &T, span: Span, file: Option<String>) {
+    let addr = node as *const T as usize;
+    get_span_table().write().unwrap().insert(addr, span);
+    if let Some(file) = file {
+        get_file_table().write().unwrap().insert(addr, file);
+    }
+}
+
+pub fn clear_span_and_file_tables() {
+    get_span_table().write().unwrap().clear();
+    get_file_table().write().unwrap().clear();
 }
 
 pub fn get_span<T>(node: &T) -> Option<Span> {
@@ -150,17 +168,28 @@ impl Type {
                 if name == generic_name && args.is_empty() {
                     replacement.clone()
                 } else {
-                    let subbed_args = args.iter().map(|arg| arg.substitute(generic_name, replacement)).collect();
+                    let subbed_args = args
+                        .iter()
+                        .map(|arg| arg.substitute(generic_name, replacement))
+                        .collect();
                     Type::Struct(name.clone(), subbed_args)
                 }
             }
-            Type::Array(inner) => Type::Array(Box::new(inner.substitute(generic_name, replacement))),
+            Type::Array(inner) => {
+                Type::Array(Box::new(inner.substitute(generic_name, replacement)))
+            }
             Type::Tuple(elems) => {
-                let subbed_elems = elems.iter().map(|el| el.substitute(generic_name, replacement)).collect();
+                let subbed_elems = elems
+                    .iter()
+                    .map(|el| el.substitute(generic_name, replacement))
+                    .collect();
                 Type::Tuple(subbed_elems)
             }
             Type::Function(params, ret) => {
-                let subbed_params = params.iter().map(|p| p.substitute(generic_name, replacement)).collect();
+                let subbed_params = params
+                    .iter()
+                    .map(|p| p.substitute(generic_name, replacement))
+                    .collect();
                 let subbed_ret = ret.substitute(generic_name, replacement);
                 Type::Function(subbed_params, Box::new(subbed_ret))
             }
@@ -264,7 +293,11 @@ impl<'a> TypeParser<'a> {
                     if probe.peek() == Some(&'n') {
                         probe.next();
                         while let Some(&c) = probe.peek() {
-                            if c.is_whitespace() { probe.next(); } else { break; }
+                            if c.is_whitespace() {
+                                probe.next();
+                            } else {
+                                break;
+                            }
                         }
                         if probe.peek() == Some(&'(') {
                             is_fn = true;
@@ -315,7 +348,10 @@ impl<'a> TypeParser<'a> {
             }
         }
         if name.is_empty() {
-            return Err(format!("Unexpected character in type parsing: {:?}", self.chars.peek()));
+            return Err(format!(
+                "Unexpected character in type parsing: {:?}",
+                self.chars.peek()
+            ));
         }
         self.skip_whitespace();
         if self.chars.peek() == Some(&'<') {
@@ -360,7 +396,10 @@ impl std::str::FromStr for Type {
         let parsed = parser.parse()?;
         parser.skip_whitespace();
         if parser.chars.peek().is_some() {
-            return Err(format!("Extraneous input starting at {:?}", parser.chars.peek()));
+            return Err(format!(
+                "Extraneous input starting at {:?}",
+                parser.chars.peek()
+            ));
         }
         Ok(parsed)
     }
@@ -404,7 +443,7 @@ impl Clone for StructDef {
             attributes: self.attributes.clone(),
         };
         if let Some(span) = get_span(self) {
-            register_span(&cloned, span);
+            register_span_with_file(&cloned, span, get_file(self));
         }
         cloned
     }
@@ -461,7 +500,7 @@ impl Clone for Function {
             attributes: self.attributes.clone(),
         };
         if let Some(span) = get_span(self) {
-            register_span(&cloned, span);
+            register_span_with_file(&cloned, span, get_file(self));
         }
         cloned
     }
@@ -521,7 +560,7 @@ impl Clone for Stmt {
             Stmt::For(s1, s2, s) => Stmt::For(s1.clone(), s2.clone(), s.clone()),
         };
         if let Some(span) = get_span(self) {
-            register_span(&cloned, span);
+            register_span_with_file(&cloned, span, get_file(self));
         }
         cloned
     }
@@ -542,7 +581,11 @@ pub enum Expr {
     StringLit(String),
     Bool(bool),
     Match(Box<Expr>, Vec<MatchArm>),
-    If(Box<Expr>, Box<(Vec<Stmt>, Option<Expr>)>, Option<Box<(Vec<Stmt>, Option<Expr>)>>),
+    If(
+        Box<Expr>,
+        Box<(Vec<Stmt>, Option<Expr>)>,
+        Option<Box<(Vec<Stmt>, Option<Expr>)>>,
+    ),
     Default,
     InvokeFuncPtr(Box<Expr>, Vec<Expr>),
     Closure(Box<Function>),
@@ -574,7 +617,9 @@ impl Clone for Expr {
             Expr::Default => Expr::Default,
             Expr::InvokeFuncPtr(e, v) => Expr::InvokeFuncPtr(e.clone(), v.clone()),
             Expr::Closure(f) => Expr::Closure(f.clone()),
-            Expr::ClosureInstantiate(s1, s2, v) => Expr::ClosureInstantiate(s1.clone(), s2.clone(), v.clone()),
+            Expr::ClosureInstantiate(s1, s2, v) => {
+                Expr::ClosureInstantiate(s1.clone(), s2.clone(), v.clone())
+            }
             Expr::Cast(e, t) => Expr::Cast(e.clone(), t.clone()),
             Expr::Spread(e) => Expr::Spread(e.clone()),
             Expr::Tuple(v) => Expr::Tuple(v.clone()),
@@ -582,7 +627,7 @@ impl Clone for Expr {
             Expr::VecLit(v) => Expr::VecLit(v.clone()),
         };
         if let Some(span) = get_span(self) {
-            register_span(&cloned, span);
+            register_span_with_file(&cloned, span, get_file(self));
         }
         cloned
     }
@@ -626,7 +671,7 @@ impl Clone for TraitDef {
             attributes: self.attributes.clone(),
         };
         if let Some(span) = get_span(self) {
-            register_span(&cloned, span);
+            register_span_with_file(&cloned, span, get_file(self));
         }
         cloned
     }
@@ -655,7 +700,7 @@ impl Clone for ImplDef {
             attributes: self.attributes.clone(),
         };
         if let Some(span) = get_span(self) {
-            register_span(&cloned, span);
+            register_span_with_file(&cloned, span, get_file(self));
         }
         cloned
     }
@@ -682,7 +727,7 @@ impl Clone for ConstDef {
             is_mutable: self.is_mutable,
         };
         if let Some(span) = get_span(self) {
-            register_span(&cloned, span);
+            register_span_with_file(&cloned, span, get_file(self));
         }
         cloned
     }

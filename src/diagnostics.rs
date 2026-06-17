@@ -57,8 +57,11 @@ pub fn print_diagnostics() {
             eprintln!("\x1b[1;31merror\x1b[0m: {}", diag.message);
             if let Some(span) = diag.span {
                 if let Some(ref file_path) = diag.file_path {
-                    eprintln!("  \x1b[1;34m-->\x1b[0m {}:{}:{}", file_path, span.line, span.column);
-                    
+                    eprintln!(
+                        "  \x1b[1;34m-->\x1b[0m {}:{}:{}",
+                        file_path, span.line, span.column
+                    );
+
                     // Try to read the file and show the source line with visual indicators
                     if let Ok(content) = std::fs::read_to_string(file_path) {
                         let lines: Vec<&str> = content.lines().collect();
@@ -68,7 +71,7 @@ pub fn print_diagnostics() {
                             let pad = " ".repeat(line_num_str.len());
                             eprintln!("   \x1b[1;34m|\x1b[0m");
                             eprintln!("{} \x1b[1;34m|\x1b[0m {}", line_num_str, line_content);
-                            
+
                             // Visual indicator (carets)
                             let caret_pad = " ".repeat(span.column - 1);
                             let caret_len = if span.end > span.start {
@@ -83,7 +86,10 @@ pub fn print_diagnostics() {
                         }
                     }
                 } else {
-                    eprintln!("  \x1b[1;34m-->\x1b[0m Line {}, Column {}", span.line, span.column);
+                    eprintln!(
+                        "  \x1b[1;34m-->\x1b[0m Line {}, Column {}",
+                        span.line, span.column
+                    );
                 }
             }
             eprintln!();

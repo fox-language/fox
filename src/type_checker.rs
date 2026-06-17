@@ -1,10 +1,10 @@
-use std::collections::{HashMap, HashSet};
-use crate::ast::{Expr, Function, StructDef, MatchArm, MatchPattern, Op, Stmt};
-use crate::codegen::{
-    resolve_struct_name, resolve_const_name, resolve_method_name,
-    resolve_func_name, extract_fn_return_type, is_compatible,
-};
+use crate::ast::{Expr, Function, MatchArm, MatchPattern, Op, Stmt, StructDef};
 use crate::codegen::intrinsics::lookup_builtin_intrinsic;
+use crate::codegen::{
+    extract_fn_return_type, is_compatible, resolve_const_name, resolve_func_name,
+    resolve_method_name, resolve_struct_name,
+};
+use std::collections::{HashMap, HashSet};
 
 pub fn get_expr_type(
     expr: &Expr,
@@ -19,7 +19,10 @@ pub fn get_expr_type(
                 sym.get(n).unwrap().clone()
             } else if let Some(resolved) = resolve_const_name(n) {
                 crate::codegen::GLOBAL_CONSTS.with(|gc| {
-                    gc.borrow().get(&resolved).cloned().unwrap_or_else(|| "i32".to_string())
+                    gc.borrow()
+                        .get(&resolved)
+                        .cloned()
+                        .unwrap_or_else(|| "i32".to_string())
                 })
             } else {
                 "i32".to_string()
@@ -34,7 +37,15 @@ pub fn get_expr_type(
             }
         }
         Expr::Binary(l, op, r) => {
-            if matches!(op, Op::Less | Op::LessEqual | Op::Greater | Op::GreaterEqual | Op::EqualEqual | Op::NotEqual) {
+            if matches!(
+                op,
+                Op::Less
+                    | Op::LessEqual
+                    | Op::Greater
+                    | Op::GreaterEqual
+                    | Op::EqualEqual
+                    | Op::NotEqual
+            ) {
                 return "bool".to_string();
             }
             let l_ty = get_expr_type(l, sym, funcs, structs);
@@ -65,7 +76,10 @@ pub fn get_expr_type(
         Expr::FieldAccess(obj, f_name) => {
             let obj_ty = get_expr_type(obj, sym, funcs, structs);
             if obj_ty.starts_with("[]") {
-                panic!("Field access not supported on array type: {}.{}", obj_ty, f_name);
+                panic!(
+                    "Field access not supported on array type: {}.{}",
+                    obj_ty, f_name
+                );
             }
             if obj_ty.starts_with('(') && obj_ty.ends_with(')') {
                 if let Ok(idx) = f_name.parse::<usize>() {
@@ -78,7 +92,10 @@ pub fn get_expr_type(
                     }
                 } else {
                     crate::diagnostics::report_error(
-                        format!("Tuple elements can only be accessed by index (e.g. '.0'), found '.{}'", f_name),
+                        format!(
+                            "Tuple elements can only be accessed by index (e.g. '.0'), found '.{}'",
+                            f_name
+                        ),
                         crate::ast::get_span(expr),
                     );
                 }
@@ -99,25 +116,45 @@ pub fn get_expr_type(
                     if let Some(s_field) = s.fields.iter().find(|sf| &sf.name == fname) {
                         let actual_ty = safe_get_expr_type(fexpr, sym, funcs, structs);
                         let expected_ty = s_field.ty.to_string();
-                        if expected_ty != actual_ty && actual_ty != "unknown" && actual_ty != "anyref" && !has_generic_params_in_type(&expected_ty, &[]) && !has_generic_params_in_type(&actual_ty, &[]) {
+                        if expected_ty != actual_ty
+                            && actual_ty != "unknown"
+                            && actual_ty != "anyref"
+                            && !has_generic_params_in_type(&expected_ty, &[])
+                            && !has_generic_params_in_type(&actual_ty, &[])
+                        {
                             let is_actual_f = actual_ty == "f32" || actual_ty == "f64";
                             let is_expected_f = expected_ty == "f32" || expected_ty == "f64";
                             let is_actual_64 = actual_ty == "i64" || actual_ty == "u64";
                             let is_expected_64 = expected_ty == "i64" || expected_ty == "u64";
-                            let is_actual_32 = actual_ty == "i32" || actual_ty == "u32" || actual_ty == "byte" || actual_ty == "bool";
-                            let is_expected_32 = expected_ty == "i32" || expected_ty == "u32" || expected_ty == "byte" || expected_ty == "bool";
+                            let is_actual_32 = actual_ty == "i32"
+                                || actual_ty == "u32"
+                                || actual_ty == "byte"
+                                || actual_ty == "bool";
+                            let is_expected_32 = expected_ty == "i32"
+                                || expected_ty == "u32"
+                                || expected_ty == "byte"
+                                || expected_ty == "bool";
                             if is_actual_f && is_expected_f {
                                 // float types are always compatible
-                            } else if (is_expected_64 && is_actual_32) || (is_expected_32 && is_actual_64) || (!is_actual_64 && !is_expected_64 && actual_ty != expected_ty) {
+                            } else if (is_expected_64 && is_actual_32)
+                                || (is_expected_32 && is_actual_64)
+                                || (!is_actual_64 && !is_expected_64 && actual_ty != expected_ty)
+                            {
                                 crate::diagnostics::report_error(
-                                    format!("Type mismatch for field '{}': expected '{}', found '{}'", fname, expected_ty, actual_ty),
+                                    format!(
+                                        "Type mismatch for field '{}': expected '{}', found '{}'",
+                                        fname, expected_ty, actual_ty
+                                    ),
                                     crate::ast::get_span(fexpr),
                                 );
                             }
                         }
                     } else {
                         crate::diagnostics::report_error(
-                            format!("Unknown field '{}' in instantiation of struct '{}'", fname, n),
+                            format!(
+                                "Unknown field '{}' in instantiation of struct '{}'",
+                                fname, n
+                            ),
                             crate::ast::get_span(expr),
                         );
                     }
@@ -157,7 +194,7 @@ pub fn get_expr_type(
             if let Some(ty) = sym.get(n) {
                 if ty.starts_with("fn(") {
                     if let Some(idx) = ty.rfind("):") {
-                        return ty[idx+2..].to_string();
+                        return ty[idx + 2..].to_string();
                     }
                 }
             }
@@ -210,7 +247,7 @@ pub fn get_expr_type(
             if func_ty.starts_with("fn(") {
                 let inner = &func_ty[3..];
                 if let Some(idx) = inner.find("):") {
-                    return inner[idx+2..].to_string();
+                    return inner[idx + 2..].to_string();
                 }
             }
             "unknown".to_string()
@@ -232,10 +269,13 @@ pub fn get_expr_type(
                 for (k, _) in pairs {
                     let k_ty = get_expr_type(k, sym, funcs, structs);
                     if k_ty != first_k_ty {
-                        panic!("Map keys must all have the same type: found '{}' and '{}'", first_k_ty, k_ty);
+                        panic!(
+                            "Map keys must all have the same type: found '{}' and '{}'",
+                            first_k_ty, k_ty
+                        );
                     }
                 }
-                
+
                 let first_v_ty = get_expr_type(&pairs[0].1, sym, funcs, structs);
                 let mut vals_same = true;
                 for (_, v) in pairs {
@@ -245,7 +285,11 @@ pub fn get_expr_type(
                         break;
                     }
                 }
-                let v_ty = if vals_same { first_v_ty } else { "anyref".to_string() };
+                let v_ty = if vals_same {
+                    first_v_ty
+                } else {
+                    "anyref".to_string()
+                };
                 format!("Map<{}, {}>", first_k_ty, v_ty)
             }
         }
@@ -262,7 +306,11 @@ pub fn get_expr_type(
                         break;
                     }
                 }
-                let ty = if elems_same { first_ty } else { "anyref".to_string() };
+                let ty = if elems_same {
+                    first_ty
+                } else {
+                    "anyref".to_string()
+                };
                 format!("Vec<{}>", ty)
             }
         }
@@ -280,13 +328,20 @@ pub fn validate_call_types_in_stmt(
             let expr_ty = safe_get_expr_type(expr, sym, funcs, structs);
             let ty = if let Some(t) = ty_annot {
                 let annot_str = t.to_string();
-                if !has_generic_params_in_type(&annot_str, &[]) && !has_generic_params_in_type(&expr_ty, &[])
-                    && expr_ty != "unknown" && expr_ty != "void" && expr_ty != "anyref"
-                    && !annot_str.contains('<') && !expr_ty.contains('<')
+                if !has_generic_params_in_type(&annot_str, &[])
+                    && !has_generic_params_in_type(&expr_ty, &[])
+                    && expr_ty != "unknown"
+                    && expr_ty != "void"
+                    && expr_ty != "anyref"
+                    && !annot_str.contains('<')
+                    && !expr_ty.contains('<')
                 {
                     if !is_annotation_compatible(&expr_ty, &annot_str, structs) {
                         crate::diagnostics::report_error(
-                            format!("Type mismatch: expected '{}', found '{}'", annot_str, expr_ty),
+                            format!(
+                                "Type mismatch: expected '{}', found '{}'",
+                                annot_str, expr_ty
+                            ),
                             crate::ast::get_span(expr),
                         );
                     }
@@ -350,11 +405,17 @@ pub fn validate_call_types_in_stmt(
 }
 
 fn is_generic_param(ty: &str) -> bool {
-    let known_generics = ["T", "K", "V", "E", "A", "B", "C", "T1", "T2", "T3", "Key", "Value", "Item", "Error"];
+    let known_generics = [
+        "T", "K", "V", "E", "A", "B", "C", "T1", "T2", "T3", "Key", "Value", "Item", "Error",
+    ];
     known_generics.contains(&ty)
 }
 
-fn is_annotation_compatible(actual: &str, expected: &str, structs: &HashMap<String, StructDef>) -> bool {
+fn is_annotation_compatible(
+    actual: &str,
+    expected: &str,
+    structs: &HashMap<String, StructDef>,
+) -> bool {
     if is_compatible(actual, expected, structs) {
         return true;
     }
@@ -415,7 +476,10 @@ fn safe_get_expr_type(
 }
 
 fn is_literal_expr(expr: &Expr) -> bool {
-    matches!(expr, Expr::Integer(_) | Expr::Float(_) | Expr::Bool(_) | Expr::StringLit(_))
+    matches!(
+        expr,
+        Expr::Integer(_) | Expr::Float(_) | Expr::Bool(_) | Expr::StringLit(_)
+    )
 }
 
 pub fn validate_call_types_in_expr(
@@ -441,7 +505,11 @@ pub fn validate_call_types_in_expr(
                 // Skip type checking for functions with unresolved generic parameters
                 if f.generic.params.is_empty() {
                     let generic_params: Vec<String> = Vec::new();
-                    let skip_self = if !f.params.is_empty() && f.params[0].name == "self" { 1 } else { 0 };
+                    let skip_self = if !f.params.is_empty() && f.params[0].name == "self" {
+                        1
+                    } else {
+                        0
+                    };
                     for (i, arg) in args.iter().enumerate() {
                         let param_idx = i + skip_self;
                         if param_idx >= f.params.len() {
@@ -460,7 +528,10 @@ pub fn validate_call_types_in_expr(
                                 // OK - codegen will emit as i64.const
                             } else {
                                 crate::diagnostics::report_error(
-                                    format!("Type mismatch: expected '{}', found '{}'", expected_ty, actual_ty),
+                                    format!(
+                                        "Type mismatch: expected '{}', found '{}'",
+                                        expected_ty, actual_ty
+                                    ),
                                     crate::ast::get_span(arg),
                                 );
                             }
@@ -480,29 +551,36 @@ pub fn validate_call_types_in_expr(
                     if !f.generic.params.is_empty() {
                         // still need to recurse into args
                     } else {
-                        let generic_params: Vec<String> = f.generic.params.iter().map(|gp| gp.name.clone()).collect();
+                        let generic_params: Vec<String> =
+                            f.generic.params.iter().map(|gp| gp.name.clone()).collect();
                         for (i, arg) in args.iter().enumerate() {
                             let param_idx = i + 1; // skip self
                             if param_idx >= f.params.len() {
                                 break;
                             }
-                        let expected_ty = f.params[param_idx].ty.to_string();
-                        if has_generic_params_in_type(&expected_ty, &generic_params) {
-                            continue;
-                        }
-                        let actual_ty = safe_get_expr_type(arg, sym, funcs, structs);
-                        if has_generic_params_in_type(&actual_ty, &generic_params) {
-                            continue;
-                        }
-                        if !is_compatible(&actual_ty, &expected_ty, structs) {
-                            if actual_ty == "i32" && expected_ty == "i64" && is_literal_expr(arg) {
-                                // OK - codegen will emit as i64.const
-                            } else {
-                                crate::diagnostics::report_error(
-                                    format!("Type mismatch: expected '{}', found '{}'", expected_ty, actual_ty),
-                                    crate::ast::get_span(arg),
-                                );
+                            let expected_ty = f.params[param_idx].ty.to_string();
+                            if has_generic_params_in_type(&expected_ty, &generic_params) {
+                                continue;
                             }
+                            let actual_ty = safe_get_expr_type(arg, sym, funcs, structs);
+                            if has_generic_params_in_type(&actual_ty, &generic_params) {
+                                continue;
+                            }
+                            if !is_compatible(&actual_ty, &expected_ty, structs) {
+                                if actual_ty == "i32"
+                                    && expected_ty == "i64"
+                                    && is_literal_expr(arg)
+                                {
+                                    // OK - codegen will emit as i64.const
+                                } else {
+                                    crate::diagnostics::report_error(
+                                        format!(
+                                            "Type mismatch: expected '{}', found '{}'",
+                                            expected_ty, actual_ty
+                                        ),
+                                        crate::ast::get_span(arg),
+                                    );
+                                }
                             }
                         }
                     }
@@ -561,11 +639,12 @@ pub fn validate_call_types_in_expr(
                     let ty = match &arm.pattern {
                         MatchPattern::Some(_) | MatchPattern::Ok(_) => {
                             if target_ty.starts_with("option::Option<") {
-                                target_ty["option::Option<".len()..target_ty.len()-1].to_string()
+                                target_ty["option::Option<".len()..target_ty.len() - 1].to_string()
                             } else if target_ty.starts_with("Option<") {
-                                target_ty["Option<".len()..target_ty.len()-1].to_string()
+                                target_ty["Option<".len()..target_ty.len() - 1].to_string()
                             } else if target_ty.starts_with("result::Result<") {
-                                let inner = &target_ty["result::Result<".len()..target_ty.len()-1];
+                                let inner =
+                                    &target_ty["result::Result<".len()..target_ty.len() - 1];
                                 if let Some(comma) = inner.rfind(',') {
                                     inner[..comma].trim().to_string()
                                 } else {
@@ -577,16 +656,17 @@ pub fn validate_call_types_in_expr(
                         }
                         MatchPattern::Err(_) => {
                             if target_ty.starts_with("result::Result<") {
-                                let inner = &target_ty["result::Result<".len()..target_ty.len()-1];
+                                let inner =
+                                    &target_ty["result::Result<".len()..target_ty.len() - 1];
                                 if let Some(comma) = inner.find(',') {
-                                    inner[comma+1..].trim().to_string()
+                                    inner[comma + 1..].trim().to_string()
                                 } else {
                                     "anyref".to_string()
                                 }
                             } else if target_ty.starts_with("Result<") {
-                                let inner = &target_ty["Result<".len()..target_ty.len()-1];
+                                let inner = &target_ty["Result<".len()..target_ty.len() - 1];
                                 if let Some(comma) = inner.find(',') {
-                                    inner[comma+1..].trim().to_string()
+                                    inner[comma + 1..].trim().to_string()
                                 } else {
                                     "anyref".to_string()
                                 }
@@ -648,7 +728,12 @@ pub fn validate_call_types_in_expr(
                 validate_call_types_in_expr(e, sym, funcs, structs);
             }
         }
-        Expr::Identifier(_) | Expr::Integer(_) | Expr::Float(_) | Expr::StringLit(_) | Expr::Bool(_) | Expr::Default => {}
+        Expr::Identifier(_)
+        | Expr::Integer(_)
+        | Expr::Float(_)
+        | Expr::StringLit(_)
+        | Expr::Bool(_)
+        | Expr::Default => {}
     }
 }
 
@@ -682,11 +767,18 @@ impl MatchArm {
     }
 }
 
-pub fn validate_match_patterns(opt_ty: &str, arms: &[MatchArm], structs: &HashMap<String, StructDef>) {
+pub fn validate_match_patterns(
+    opt_ty: &str,
+    arms: &[MatchArm],
+    structs: &HashMap<String, StructDef>,
+) {
     let resolved_obj_ty = resolve_struct_name(opt_ty, structs);
     if let Some(s_def) = structs.get(&resolved_obj_ty) {
         if !s_def.is_enum {
-            crate::diagnostics::report_error(format!("Cannot match on non-enum type '{}'", opt_ty), None);
+            crate::diagnostics::report_error(
+                format!("Cannot match on non-enum type '{}'", opt_ty),
+                None,
+            );
             return;
         }
         let mut matched_variants = HashSet::new();
@@ -701,21 +793,43 @@ pub fn validate_match_patterns(opt_ty: &str, arms: &[MatchArm], structs: &HashMa
                 MatchPattern::None => ("None".to_string(), 0),
                 MatchPattern::Ok(_) => ("Ok".to_string(), 1),
                 MatchPattern::Err(_) => ("Err".to_string(), 1),
-                MatchPattern::Variant(name, binds) => (name.rsplit("::").next().unwrap().to_string(), binds.len()),
+                MatchPattern::Variant(name, binds) => {
+                    (name.rsplit("::").next().unwrap().to_string(), binds.len())
+                }
                 MatchPattern::CatchAll => unreachable!(),
             };
             matched_variants.insert(variant_name.clone());
             if !s_def.variants.contains(&variant_name) {
                 if variant_name == "Some" || variant_name == "None" {
-                    crate::diagnostics::report_error(format!("Cannot match Option patterns (Some/None) on non-Option type '{}'", opt_ty), None);
+                    crate::diagnostics::report_error(
+                        format!(
+                            "Cannot match Option patterns (Some/None) on non-Option type '{}'",
+                            opt_ty
+                        ),
+                        None,
+                    );
                 } else if variant_name == "Ok" || variant_name == "Err" {
-                    crate::diagnostics::report_error(format!("Cannot match Result patterns (Ok/Err) on non-Result type '{}'", opt_ty), None);
+                    crate::diagnostics::report_error(
+                        format!(
+                            "Cannot match Result patterns (Ok/Err) on non-Result type '{}'",
+                            opt_ty
+                        ),
+                        None,
+                    );
                 } else {
-                    crate::diagnostics::report_error(format!("Enum '{}' does not have variant '{}'", resolved_obj_ty, variant_name), None);
+                    crate::diagnostics::report_error(
+                        format!(
+                            "Enum '{}' does not have variant '{}'",
+                            resolved_obj_ty, variant_name
+                        ),
+                        None,
+                    );
                 }
                 continue;
             }
-            let expected_payload_len = s_def.fields.iter()
+            let expected_payload_len = s_def
+                .fields
+                .iter()
                 .filter(|f| f.name.starts_with(&format!("{}_", variant_name)))
                 .count();
             if bindings_len != expected_payload_len {
@@ -724,7 +838,7 @@ pub fn validate_match_patterns(opt_ty: &str, arms: &[MatchArm], structs: &HashMa
                         "Pattern for variant '{}' expected {} bindings, found {}",
                         variant_name, expected_payload_len, bindings_len
                     ),
-                    None
+                    None,
                 );
             }
         }
@@ -741,11 +855,14 @@ pub fn validate_match_patterns(opt_ty: &str, arms: &[MatchArm], structs: &HashMa
                         "Match expression must be exhaustive: missing {}",
                         missing_variants.join(", ")
                     ),
-                    None
+                    None,
                 );
             }
         }
     } else {
-        crate::diagnostics::report_error(format!("Matched target type '{}' not found", resolved_obj_ty), None);
+        crate::diagnostics::report_error(
+            format!("Matched target type '{}' not found", resolved_obj_ty),
+            None,
+        );
     }
 }

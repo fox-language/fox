@@ -3,21 +3,24 @@ use std::path::{Path, PathBuf};
 use std::sync::{OnceLock, RwLock};
 
 pub mod ast;
+mod closure;
+pub mod codegen;
 pub mod diagnostics;
 pub mod lexer;
-pub mod parser;
-pub mod codegen;
-pub mod optimizer;
-mod closure;
-pub mod macro_runner;
-pub mod type_checker;
 pub mod lsp;
+pub mod macro_runner;
+pub mod optimizer;
+pub mod parser;
+pub mod type_checker;
 
 use crate::ast::*;
+use crate::codegen::{
+    collect_string_literals, collect_types_from_stmt, dead_code_eliminate, extract_tuple_types,
+    generate_js_bindings, generate_wat, make_tuple_struct_def, sanitize_name,
+};
 use crate::lexer::Lexer;
-use crate::parser::Parser;
-use crate::codegen::{generate_wat, collect_types_from_stmt, collect_string_literals, dead_code_eliminate, sanitize_name, extract_tuple_types, make_tuple_struct_def, generate_js_bindings};
 use crate::optimizer::*;
+use crate::parser::Parser;
 
 fn type_contains_placeholder(ty: &str, placeholders: &HashSet<String>) -> bool {
     let chars: Vec<char> = ty.chars().collect();
@@ -29,7 +32,9 @@ fn type_contains_placeholder(ty: &str, placeholders: &HashSet<String>) -> bool {
                 ident.push(chars[i]);
                 i += 1;
             }
-            if placeholders.contains(&ident) || (ident.len() == 1 && ident.chars().next().unwrap().is_ascii_uppercase()) {
+            if placeholders.contains(&ident)
+                || (ident.len() == 1 && ident.chars().next().unwrap().is_ascii_uppercase())
+            {
                 return true;
             }
         } else {
@@ -49,7 +54,12 @@ fn extract_generic_instantiations_with_placeholders(
     while i < chars.len() {
         if chars[i].is_alphanumeric() || chars[i] == '_' || chars[i] == ':' {
             let mut name = String::new();
-            while i < chars.len() && (chars[i].is_alphanumeric() || chars[i] == '_' || chars[i] == ':' || chars[i] == '/') {
+            while i < chars.len()
+                && (chars[i].is_alphanumeric()
+                    || chars[i] == '_'
+                    || chars[i] == ':'
+                    || chars[i] == '/')
+            {
                 name.push(chars[i]);
                 i += 1;
             }
@@ -89,11 +99,18 @@ fn extract_generic_instantiations_with_placeholders(
                     args.push(current_arg.trim().to_string());
                 }
                 for arg in &args {
-                    extract_generic_instantiations_with_placeholders(arg, instantiations, placeholders);
+                    extract_generic_instantiations_with_placeholders(
+                        arg,
+                        instantiations,
+                        placeholders,
+                    );
                 }
                 let has_placeholder = type_contains_placeholder(&args_str, placeholders);
                 if !has_placeholder {
-                    instantiations.entry(name).or_default().insert(args.join(","));
+                    instantiations
+                        .entry(name)
+                        .or_default()
+                        .insert(args.join(","));
                 }
             }
         } else {
@@ -106,11 +123,26 @@ fn parse_file(
     path: &Path,
     namespace: Option<&str>,
     visited: &mut HashSet<PathBuf>,
-    cache: &mut HashMap<PathBuf, (Vec<StructDef>, Vec<Function>, Vec<ImplDef>, Vec<TraitDef>, Vec<ConstDef>)>,
+    cache: &mut HashMap<
+        PathBuf,
+        (
+            Vec<StructDef>,
+            Vec<Function>,
+            Vec<ImplDef>,
+            Vec<TraitDef>,
+            Vec<ConstDef>,
+        ),
+    >,
     imports_registry: &mut HashMap<String, HashSet<String>>,
     namespace_aliases: &mut HashMap<String, Vec<String>>,
     rename_aliases: &mut HashMap<String, String>,
-) -> (Vec<StructDef>, Vec<Function>, Vec<ImplDef>, Vec<TraitDef>, Vec<ConstDef>) {
+) -> (
+    Vec<StructDef>,
+    Vec<Function>,
+    Vec<ImplDef>,
+    Vec<TraitDef>,
+    Vec<ConstDef>,
+) {
     let canonical = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
     if visited.contains(&canonical) {
         if let Some(cached) = cache.get(&canonical) {
@@ -122,7 +154,10 @@ fn parse_file(
 
     let is_std_file = {
         let is_std_by_env = if let Ok(fox_path) = std::env::var("FOX_PATH") {
-            if let (Ok(c_path), Ok(mut c_fox)) = (std::fs::canonicalize(path), std::fs::canonicalize(Path::new(&fox_path))) {
+            if let (Ok(c_path), Ok(mut c_fox)) = (
+                std::fs::canonicalize(path),
+                std::fs::canonicalize(Path::new(&fox_path)),
+            ) {
                 if c_fox.join("std").exists() && c_fox.join("src").exists() {
                     c_fox = c_fox.join("std");
                 }
@@ -135,7 +170,10 @@ fn parse_file(
         };
         let is_std_by_path = {
             let path_str = path.to_string_lossy();
-            path_str.contains("/std/") || path_str.contains("\\std\\") || path_str.starts_with("std/") || path_str.starts_with("std\\")
+            path_str.contains("/std/")
+                || path_str.contains("\\std\\")
+                || path_str.starts_with("std/")
+                || path_str.starts_with("std\\")
         };
         is_std_by_env || is_std_by_path
     };
@@ -145,6 +183,7 @@ fn parse_file(
     } else {
         std::fs::read_to_string(path).expect(&format!("Failed to read file: {:?}", path))
     };
+    let previous_file = crate::diagnostics::CURRENT_FILE.with(|cf| cf.borrow().clone());
     crate::diagnostics::set_current_file(Some(path.to_string_lossy().to_string()));
     let lexer = Lexer::new(&source);
     let mut parser = Parser::new(lexer);
@@ -157,170 +196,203 @@ fn parse_file(
 
     for item in items {
         match item {
-            Item::Use { path: import_path, symbols } => {
-                    // Resolve namespace aliases: use fmt::{sprintf}; where fmt was imported via use std::fmt;
-                    let resolved_path = if namespace_aliases.contains_key(&import_path[0]) && import_path.len() == 1 {
+            Item::Use {
+                path: import_path,
+                symbols,
+            } => {
+                // Resolve namespace aliases: use fmt::{sprintf}; where fmt was imported via use std::fmt;
+                let resolved_path =
+                    if namespace_aliases.contains_key(&import_path[0]) && import_path.len() == 1 {
                         namespace_aliases[&import_path[0]].clone()
                     } else {
                         import_path.clone()
                     };
 
-                    let dir_path = if resolved_path[0] == "self" {
-                        let parent = path.parent().unwrap_or(Path::new("."));
-                        let relative = resolved_path[1..].join("/");
-                        parent.join(relative).to_string_lossy().to_string()
-                    } else if resolved_path[0] == "std" {
-                        let mut fox_path = std::env::var("FOX_PATH").unwrap_or_else(|_| String::new());
-                         if fox_path.is_empty() {
-                            fox_path = String::from("/usr/local/fox");
-                        }
-                        format!("{}/{}", fox_path, resolved_path.join("/"))
-                    } else {
-                        panic!("Unknown import root: {}", resolved_path[0]);
-                    };
-
-                    let base_path = Path::new(&dir_path);
-                    if !base_path.is_dir() {
-                        panic!("Import path is not a directory: {:?}", base_path);
+                let dir_path = if resolved_path[0] == "self" {
+                    let parent = path.parent().unwrap_or(Path::new("."));
+                    let relative = resolved_path[1..].join("/");
+                    parent.join(relative).to_string_lossy().to_string()
+                } else if resolved_path[0] == "std" {
+                    let mut fox_path = std::env::var("FOX_PATH").unwrap_or_else(|_| String::new());
+                    if fox_path.is_empty() {
+                        fox_path = String::from("/usr/local/fox");
                     }
+                    format!("{}/{}", fox_path, resolved_path.join("/"))
+                } else {
+                    panic!("Unknown import root: {}", resolved_path[0]);
+                };
 
-                    // Load all files from the directory
-                    let mut imported_structs = Vec::new();
-                    let mut imported_funcs = Vec::new();
-                    let mut imported_impls = Vec::new();
-                    let mut imported_traits = Vec::new();
-                    let mut imported_consts = Vec::new();
+                let base_path = Path::new(&dir_path);
+                if !base_path.is_dir() {
+                    panic!("Import path is not a directory: {:?}", base_path);
+                }
 
-                    for entry in std::fs::read_dir(base_path).expect(&format!("Failed to read directory {:?}", base_path)) {
-                        let entry = entry.unwrap();
-                        let file_path = entry.path();
-                        if !file_path.is_file() {
-                            continue;
-                        }
-                        let fname = file_path.file_name().and_then(|s| s.to_str()).unwrap_or("");
-                        if !fname.ends_with(".fox") {
-                            continue;
-                        }
-                        // .test.fox and .bench.fox are top-level compile units; never pull them
-                        // in transitively from a directory import.
-                        if fname.ends_with(".test.fox") || fname.ends_with(".bench.fox") {
-                            continue;
-                        }
-                        let mod_name = file_path.file_stem().unwrap().to_str().unwrap();
-                        let (imp_structs, imp_funcs, imp_impls, imp_traits, imp_consts) = parse_file(&file_path, Some(mod_name), visited, cache, imports_registry, namespace_aliases, rename_aliases);
-                        imported_structs.extend(imp_structs);
-                        imported_funcs.extend(imp_funcs);
-                        imported_impls.extend(imp_impls);
-                        imported_traits.extend(imp_traits);
-                        imported_consts.extend(imp_consts);
+                // Load all files from the directory
+                let mut imported_structs = Vec::new();
+                let mut imported_funcs = Vec::new();
+                let mut imported_impls = Vec::new();
+                let mut imported_traits = Vec::new();
+                let mut imported_consts = Vec::new();
+
+                for entry in std::fs::read_dir(base_path)
+                    .expect(&format!("Failed to read directory {:?}", base_path))
+                {
+                    let entry = entry.unwrap();
+                    let file_path = entry.path();
+                    if !file_path.is_file() {
+                        continue;
                     }
+                    let fname = file_path.file_name().and_then(|s| s.to_str()).unwrap_or("");
+                    if !fname.ends_with(".fox") {
+                        continue;
+                    }
+                    // .test.fox and .bench.fox are top-level compile units; never pull them
+                    // in transitively from a directory import.
+                    if fname.ends_with(".test.fox") || fname.ends_with(".bench.fox") {
+                        continue;
+                    }
+                    let mod_name = file_path.file_stem().unwrap().to_str().unwrap();
+                    let (imp_structs, imp_funcs, imp_impls, imp_traits, imp_consts) = parse_file(
+                        &file_path,
+                        Some(mod_name),
+                        visited,
+                        cache,
+                        imports_registry,
+                        namespace_aliases,
+                        rename_aliases,
+                    );
+                    imported_structs.extend(imp_structs);
+                    imported_funcs.extend(imp_funcs);
+                    imported_impls.extend(imp_impls);
+                    imported_traits.extend(imp_traits);
+                    imported_consts.extend(imp_consts);
+                }
 
-                    // Verify that all requested symbols are available (they'll be namespaced in the struct/func/trait lists)
-                    for (original, _alias) in &symbols {
-                        let mut found = false;
-                        for s in &imported_structs {
-                            if s.name.ends_with(&format!("::{}", original)) {
-                                if !s.is_pub { panic!("Imported struct '{}' is not pub", original); }
+                // Verify that all requested symbols are available (they'll be namespaced in the struct/func/trait lists)
+                for (original, _alias) in &symbols {
+                    let mut found = false;
+                    for s in &imported_structs {
+                        if s.name.ends_with(&format!("::{}", original)) {
+                            if !s.is_pub {
+                                panic!("Imported struct '{}' is not pub", original);
+                            }
+                            found = true;
+                            break;
+                        }
+                    }
+                    if !found {
+                        for f in &imported_funcs {
+                            if f.name.ends_with(&format!("::{}", original))
+                                || (f.is_extern && f.name == *original)
+                            {
+                                if !f.is_pub && !f._is_pub {
+                                    panic!("Imported function '{}' is not pub", original);
+                                }
                                 found = true;
                                 break;
                             }
                         }
-                        if !found {
-                            for f in &imported_funcs {
-                                if f.name.ends_with(&format!("::{}", original)) || (f.is_extern && f.name == *original) {
-                                    if !f.is_pub && !f._is_pub {
-                                        panic!("Imported function '{}' is not pub", original);
-                                    }
-                                    found = true;
-                                    break;
+                    }
+                    if !found {
+                        for t in &imported_traits {
+                            if t.name.ends_with(&format!("::{}", original)) {
+                                if !t.is_pub {
+                                    panic!("Imported trait '{}' is not pub", original);
                                 }
+                                found = true;
+                                break;
                             }
                         }
-                        if !found {
-                            for t in &imported_traits {
-                                if t.name.ends_with(&format!("::{}", original)) {
-                                    if !t.is_pub { panic!("Imported trait '{}' is not pub", original); }
-                                    found = true;
-                                    break;
+                    }
+                    if !found {
+                        for c in &imported_consts {
+                            if c.name.ends_with(&format!("::{}", original)) {
+                                if !c.is_pub {
+                                    panic!("Imported const '{}' is not pub", original);
                                 }
-                            }
-                        }
-                        if !found {
-                            for c in &imported_consts {
-                                if c.name.ends_with(&format!("::{}", original)) {
-                                    if !c.is_pub { panic!("Imported const '{}' is not pub", original); }
-                                    found = true;
-                                    break;
-                                }
-                            }
-                        }
-                        if !found {
-                            panic!("Imported symbol '{}' not found in path {:?}", original, import_path);
-                        }
-                    }
-
-                    let current_ns = namespace.unwrap_or("").to_string();
-                    let registry_entry = imports_registry.entry(current_ns).or_default();
-
-                    if symbols.is_empty() {
-                        // Bare namespace import: use std::fmt;
-                        // Register the last path segment as a namespace alias
-                        let alias = resolved_path.last().unwrap().clone();
-                        namespace_aliases.insert(alias.clone(), resolved_path.clone());
-                        // Also register the alias in the imports registry so codegen can find it
-                        registry_entry.insert(alias);
-                    } else {
-                        for (original, alias) in symbols {
-                            if let Some(alias_name) = alias {
-                                // Renamed import: use fmt::{sprintf as sprintf_alias};
-                                rename_aliases.insert(alias_name.clone(), original.clone());
-                                registry_entry.insert(alias_name);
-                            } else {
-                                registry_entry.insert(original);
+                                found = true;
+                                break;
                             }
                         }
                     }
+                    if !found {
+                        panic!(
+                            "Imported symbol '{}' not found in path {:?}",
+                            original, import_path
+                        );
+                    }
+                }
 
-                    for s in imported_structs {
-                        let span = crate::ast::get_span(&s);
-                        structs.push(s);
-                        if let Some(span) = span {
-                            crate::ast::register_span(structs.last().unwrap(), span);
+                let current_ns = namespace.unwrap_or("").to_string();
+                let registry_entry = imports_registry.entry(current_ns).or_default();
+
+                if symbols.is_empty() {
+                    // Bare namespace import: use std::fmt;
+                    // Register the last path segment as a namespace alias
+                    let alias = resolved_path.last().unwrap().clone();
+                    namespace_aliases.insert(alias.clone(), resolved_path.clone());
+                    // Also register the alias in the imports registry so codegen can find it
+                    registry_entry.insert(alias);
+                } else {
+                    for (original, alias) in symbols {
+                        if let Some(alias_name) = alias {
+                            // Renamed import: use fmt::{sprintf as sprintf_alias};
+                            rename_aliases.insert(alias_name.clone(), original.clone());
+                            registry_entry.insert(alias_name);
+                        } else {
+                            registry_entry.insert(original);
                         }
                     }
-                    for f in imported_funcs {
-                        let span = crate::ast::get_span(&f);
-                        funcs.push(f);
-                        if let Some(span) = span {
-                            crate::ast::register_span(funcs.last().unwrap(), span);
-                        }
+                }
+
+                for s in imported_structs {
+                    let span = crate::ast::get_span(&s);
+                    let file = crate::ast::get_file(&s);
+                    structs.push(s);
+                    if let Some(span) = span {
+                        crate::ast::register_span_with_file(structs.last().unwrap(), span, file);
                     }
-                    for imp in imported_impls {
-                        let span = crate::ast::get_span(&imp);
-                        impls.push(imp);
-                        if let Some(span) = span {
-                            crate::ast::register_span(impls.last().unwrap(), span);
-                        }
+                }
+                for f in imported_funcs {
+                    let span = crate::ast::get_span(&f);
+                    let file = crate::ast::get_file(&f);
+                    funcs.push(f);
+                    if let Some(span) = span {
+                        crate::ast::register_span_with_file(funcs.last().unwrap(), span, file);
                     }
-                    for t in imported_traits {
-                        let span = crate::ast::get_span(&t);
-                        traits.push(t);
-                        if let Some(span) = span {
-                            crate::ast::register_span(traits.last().unwrap(), span);
-                        }
+                }
+                for imp in imported_impls {
+                    let span = crate::ast::get_span(&imp);
+                    let file = crate::ast::get_file(&imp);
+                    impls.push(imp);
+                    if let Some(span) = span {
+                        crate::ast::register_span_with_file(impls.last().unwrap(), span, file);
                     }
-                    for c in imported_consts {
-                        let span = crate::ast::get_span(&c);
-                        consts.push(c);
-                        if let Some(span) = span {
-                            crate::ast::register_span(consts.last().unwrap(), span);
-                        }
+                }
+                for t in imported_traits {
+                    let span = crate::ast::get_span(&t);
+                    let file = crate::ast::get_file(&t);
+                    traits.push(t);
+                    if let Some(span) = span {
+                        crate::ast::register_span_with_file(traits.last().unwrap(), span, file);
                     }
+                }
+                for c in imported_consts {
+                    let span = crate::ast::get_span(&c);
+                    let file = crate::ast::get_file(&c);
+                    consts.push(c);
+                    if let Some(span) = span {
+                        crate::ast::register_span_with_file(consts.last().unwrap(), span, file);
+                    }
+                }
             }
             Item::Struct(mut s, span) => {
                 for f in &s.methods {
                     if f.is_extern && f.name.starts_with("__fox_") && !is_std_file {
-                        panic!("User-defined extern function '{}' cannot use the protected standard library prefix '__fox_'", f.name);
+                        panic!(
+                            "User-defined extern function '{}' cannot use the protected standard library prefix '__fox_'",
+                            f.name
+                        );
                     }
                 }
                 let struct_funcs = std::mem::take(&mut s.methods);
@@ -344,7 +416,10 @@ fn parse_file(
             }
             Item::Function(mut f, span) => {
                 if f.is_extern && f.name.starts_with("__fox_") && !is_std_file {
-                    panic!("User-defined extern function '{}' cannot use the protected standard library prefix '__fox_'", f.name);
+                    panic!(
+                        "User-defined extern function '{}' cannot use the protected standard library prefix '__fox_'",
+                        f.name
+                    );
                 }
                 if let Some(ns) = namespace {
                     if !f.is_extern {
@@ -368,15 +443,26 @@ fn parse_file(
             Item::Impl(mut imp, span) => {
                 for f in &imp.methods {
                     if f.is_extern && f.name.starts_with("__fox_") && !is_std_file {
-                        panic!("User-defined extern function '{}' cannot use the protected standard library prefix '__fox_'", f.name);
+                        panic!(
+                            "User-defined extern function '{}' cannot use the protected standard library prefix '__fox_'",
+                            f.name
+                        );
                     }
                 }
                 let target_ty_str = imp.target_ty.to_string();
                 let base_name = target_ty_str.split('<').next().unwrap().to_string();
                 let is_primitive = matches!(
                     target_ty_str.as_str(),
-                    "i32" | "i64" | "f32" | "f64" | "str" | "void"
-                        | "byte" | "anyref" | "externref" | "bool"
+                    "i32"
+                        | "i64"
+                        | "f32"
+                        | "f64"
+                        | "str"
+                        | "void"
+                        | "byte"
+                        | "anyref"
+                        | "externref"
+                        | "bool"
                 );
                 let is_array = target_ty_str.starts_with("[]");
                 if imp.trait_name.is_none() {
@@ -409,7 +495,9 @@ fn parse_file(
                         *tn = format!("{}::{}", ns, tn).parse::<Type>().unwrap();
                     }
                     if !is_primitive {
-                        imp.target_ty = format!("{}::{}", ns, target_ty_str).parse::<Type>().unwrap();
+                        imp.target_ty = format!("{}::{}", ns, target_ty_str)
+                            .parse::<Type>()
+                            .unwrap();
                     }
                 }
                 impls.push(imp);
@@ -420,7 +508,10 @@ fn parse_file(
             Item::Const(mut c, span) => {
                 if c.name.starts_with("__fox_") && !is_std_file {
                     let kind = if c.is_mutable { "variable" } else { "constant" };
-                    panic!("User-defined {} '{}' cannot use the protected standard library prefix '__fox_'", kind, c.name);
+                    panic!(
+                        "User-defined {} '{}' cannot use the protected standard library prefix '__fox_'",
+                        kind, c.name
+                    );
                 }
                 if let Some(ns) = namespace {
                     c.name = format!("{}::{}", ns, c.name);
@@ -432,6 +523,7 @@ fn parse_file(
             }
         }
     }
+    crate::diagnostics::set_current_file(previous_file);
     let result = (structs, funcs, impls, traits, consts);
     cache.insert(canonical, result.clone());
     result
@@ -640,7 +732,15 @@ fn main() {
     let mut namespace_aliases = HashMap::new();
     let mut rename_aliases = HashMap::new();
     let (mut parsed_structs, mut parsed_funcs, mut parsed_impls, _parsed_traits, mut parsed_consts) =
-        parse_file(Path::new(input_path), None, &mut visited, &mut cache, &mut imports_registry, &mut namespace_aliases, &mut rename_aliases);
+        parse_file(
+            Path::new(input_path),
+            None,
+            &mut visited,
+            &mut cache,
+            &mut imports_registry,
+            &mut namespace_aliases,
+            &mut rename_aliases,
+        );
 
     if crate::diagnostics::has_errors() {
         crate::diagnostics::print_diagnostics();
@@ -667,7 +767,7 @@ fn main() {
     for s in &parsed_structs {
         structs_map.insert(s.name.clone(), s.clone());
     }
-    
+
     for s in &mut parsed_structs {
         let ns = crate::codegen::get_namespace(&s.name);
         crate::codegen::set_current_namespace(ns.clone());
@@ -682,7 +782,11 @@ fn main() {
         for param in &mut f.params {
             param.ty = qualify_type(&param.ty, &ns, &structs_map);
         }
-        let qualified_body: Vec<Stmt> = f.body.iter().map(|s| qualify_stmt(s, &ns, &structs_map)).collect();
+        let qualified_body: Vec<Stmt> = f
+            .body
+            .iter()
+            .map(|s| qualify_stmt(s, &ns, &structs_map))
+            .collect();
         for (old_s, new_s) in f.body.iter().zip(&qualified_body) {
             copy_spans_stmt(old_s, new_s);
         }
@@ -697,7 +801,11 @@ fn main() {
         c.value = qualified_value;
     }
     for imp in &mut parsed_impls {
-        let ns = imp.trait_name.as_ref().map(|t| crate::codegen::get_namespace(&t.to_string())).unwrap_or_else(|| crate::codegen::get_namespace(&imp.target_ty.to_string()));
+        let ns = imp
+            .trait_name
+            .as_ref()
+            .map(|t| crate::codegen::get_namespace(&t.to_string()))
+            .unwrap_or_else(|| crate::codegen::get_namespace(&imp.target_ty.to_string()));
         crate::codegen::set_current_namespace(ns.clone());
         if let Some(ref mut trait_name) = imp.trait_name {
             *trait_name = qualify_type(trait_name, &ns, &structs_map);
@@ -710,7 +818,11 @@ fn main() {
             for p in &mut f.params {
                 p.ty = qualify_type(&p.ty, &f_ns, &structs_map);
             }
-            let qualified_body: Vec<Stmt> = f.body.iter().map(|s| qualify_stmt(s, &f_ns, &structs_map)).collect();
+            let qualified_body: Vec<Stmt> = f
+                .body
+                .iter()
+                .map(|s| qualify_stmt(s, &f_ns, &structs_map))
+                .collect();
             for (old_s, new_s) in f.body.iter().zip(&qualified_body) {
                 copy_spans_stmt(old_s, new_s);
             }
@@ -813,7 +925,6 @@ fn main() {
     }
     parsed_funcs = unique_funcs;
 
-
     // Resolve trait constraints to concrete types implementing those traits
     for s in &mut parsed_structs {
         for param in &mut s.generic.params {
@@ -824,7 +935,9 @@ fn main() {
                     if let Some(a) = &imp.trait_name {
                         let a_str = a.to_string();
                         let b_str = constraint.to_string();
-                        let matched = a == constraint || a_str.ends_with(&format!("::{}", b_str)) || b_str.ends_with(&format!("::{}", a_str));
+                        let matched = a == constraint
+                            || a_str.ends_with(&format!("::{}", b_str))
+                            || b_str.ends_with(&format!("::{}", a_str));
                         if matched {
                             found_impls.push(imp.target_ty.clone());
                         }
@@ -849,7 +962,9 @@ fn main() {
                     if let Some(a) = &imp.trait_name {
                         let a_str = a.to_string();
                         let b_str = constraint.to_string();
-                        let matched = a == constraint || a_str.ends_with(&format!("::{}", b_str)) || b_str.ends_with(&format!("::{}", a_str));
+                        let matched = a == constraint
+                            || a_str.ends_with(&format!("::{}", b_str))
+                            || b_str.ends_with(&format!("::{}", a_str));
                         if matched {
                             found_impls.push(imp.target_ty.clone());
                         }
@@ -891,7 +1006,8 @@ fn main() {
         let mut new_types = Vec::new();
         // 1. Scan un-substituted templates (both structs and functions) to find instantiations
         for s in &parsed_structs {
-            let placeholders: HashSet<String> = s.generic.params.iter().map(|gp| gp.name.clone()).collect();
+            let placeholders: HashSet<String> =
+                s.generic.params.iter().map(|gp| gp.name.clone()).collect();
             for f in &s.fields {
                 if processed_types.insert(f.ty.to_string()) {
                     new_types.push((f.ty.to_string(), placeholders.clone()));
@@ -899,7 +1015,8 @@ fn main() {
             }
         }
         for f in &parsed_funcs {
-            let mut placeholders: HashSet<String> = f.generic.params.iter().map(|gp| gp.name.clone()).collect();
+            let mut placeholders: HashSet<String> =
+                f.generic.params.iter().map(|gp| gp.name.clone()).collect();
             if let Some(ref parent_name) = f.parent_struct {
                 if let Some(parent) = parsed_structs.iter().find(|s| s.name == *parent_name) {
                     placeholders.extend(parent.generic.params.iter().map(|gp| gp.name.clone()));
@@ -939,7 +1056,8 @@ fn main() {
             for choices in combinations {
                 let placeholders = HashSet::new();
                 for f in &s.fields {
-                    let substituted = apply_multi_substitute_type(&f.ty, &s.generic.params, &choices).to_string();
+                    let substituted =
+                        apply_multi_substitute_type(&f.ty, &s.generic.params, &choices).to_string();
                     if processed_types.insert(substituted.clone()) {
                         new_types.push((substituted, placeholders.clone()));
                     }
@@ -967,7 +1085,7 @@ fn main() {
             generate_combinations(&all_params, 0, &mut current, &mut combinations);
             for choices in combinations {
                 let placeholders = HashSet::new();
-                
+
                 let (parent_choices, func_choices) = if let Some(ref pg) = parent_generic {
                     let split_idx = pg.params.len();
                     (&choices[..split_idx], &choices[split_idx..])
@@ -977,9 +1095,11 @@ fn main() {
 
                 let mut subbed_return_ty = f.return_ty.clone();
                 if let Some(ref pg) = parent_generic {
-                    subbed_return_ty = apply_multi_substitute_type(&subbed_return_ty, &pg.params, parent_choices);
+                    subbed_return_ty =
+                        apply_multi_substitute_type(&subbed_return_ty, &pg.params, parent_choices);
                 }
-                subbed_return_ty = apply_multi_substitute_type(&subbed_return_ty, &f.generic.params, func_choices);
+                subbed_return_ty =
+                    apply_multi_substitute_type(&subbed_return_ty, &f.generic.params, func_choices);
 
                 if processed_types.insert(subbed_return_ty.to_string()) {
                     new_types.push((subbed_return_ty.to_string(), placeholders.clone()));
@@ -988,9 +1108,11 @@ fn main() {
                 for p in &f.params {
                     let mut subbed_p_ty = p.ty.clone();
                     if let Some(ref pg) = parent_generic {
-                        subbed_p_ty = apply_multi_substitute_type(&subbed_p_ty, &pg.params, parent_choices);
+                        subbed_p_ty =
+                            apply_multi_substitute_type(&subbed_p_ty, &pg.params, parent_choices);
                     }
-                    subbed_p_ty = apply_multi_substitute_type(&subbed_p_ty, &f.generic.params, func_choices);
+                    subbed_p_ty =
+                        apply_multi_substitute_type(&subbed_p_ty, &f.generic.params, func_choices);
 
                     if processed_types.insert(subbed_p_ty.to_string()) {
                         new_types.push((subbed_p_ty.to_string(), placeholders.clone()));
@@ -1001,9 +1123,11 @@ fn main() {
                 for p in &f.params {
                     let mut subbed_p_ty = p.ty.clone();
                     if let Some(ref pg) = parent_generic {
-                        subbed_p_ty = apply_multi_substitute_type(&subbed_p_ty, &pg.params, parent_choices);
+                        subbed_p_ty =
+                            apply_multi_substitute_type(&subbed_p_ty, &pg.params, parent_choices);
                     }
-                    subbed_p_ty = apply_multi_substitute_type(&subbed_p_ty, &f.generic.params, func_choices);
+                    subbed_p_ty =
+                        apply_multi_substitute_type(&subbed_p_ty, &f.generic.params, func_choices);
                     env.insert(p.name.clone(), subbed_p_ty.to_string());
                 }
 
@@ -1011,9 +1135,11 @@ fn main() {
                 for stmt in &f.body {
                     let mut subbed_stmt = stmt.clone();
                     if let Some(ref pg) = parent_generic {
-                        subbed_stmt = apply_multi_substitute_stmt(&subbed_stmt, &pg.params, parent_choices);
+                        subbed_stmt =
+                            apply_multi_substitute_stmt(&subbed_stmt, &pg.params, parent_choices);
                     }
-                    subbed_stmt = apply_multi_substitute_stmt(&subbed_stmt, &f.generic.params, func_choices);
+                    subbed_stmt =
+                        apply_multi_substitute_stmt(&subbed_stmt, &f.generic.params, func_choices);
                     collect_types_from_stmt(&subbed_stmt, &mut func_body_types, &mut env);
                 }
                 for ty in func_body_types {
@@ -1034,7 +1160,11 @@ fn main() {
             before_total += s.len();
         }
         for (ty, placeholders) in new_types {
-            extract_generic_instantiations_with_placeholders(&ty, &mut instantiations, &placeholders);
+            extract_generic_instantiations_with_placeholders(
+                &ty,
+                &mut instantiations,
+                &placeholders,
+            );
         }
         let mut after_total = 0;
         for s in instantiations.values() {
@@ -1082,7 +1212,8 @@ fn main() {
                             }
                             for (idx, part) in parts.iter().enumerate() {
                                 if idx < choices_for_params.len() {
-                                    let is_placeholder = s.generic.params.iter().any(|gp| gp.name == *part);
+                                    let is_placeholder =
+                                        s.generic.params.iter().any(|gp| gp.name == *part);
                                     if !is_placeholder {
                                         choices_for_params[idx].insert(part.clone());
                                     }
@@ -1094,9 +1225,13 @@ fn main() {
                 for (idx, param) in s.generic.params.iter_mut().enumerate() {
                     if originally_unconstrained_structs.contains(&(s.name.clone(), idx)) {
                         let original_len = param.constraints.len();
-                        let mut new_constraints: Vec<String> = choices_for_params[idx].iter().cloned().collect();
+                        let mut new_constraints: Vec<String> =
+                            choices_for_params[idx].iter().cloned().collect();
                         new_constraints.sort();
-                        param.constraints = new_constraints.iter().map(|c| c.parse::<Type>().unwrap()).collect();
+                        param.constraints = new_constraints
+                            .iter()
+                            .map(|c| c.parse::<Type>().unwrap())
+                            .collect();
                         if param.constraints.len() != original_len {
                             added_any = true;
                         }
@@ -1143,7 +1278,8 @@ fn main() {
                             }
                             for (idx, part) in parts.iter().enumerate() {
                                 if idx < choices_for_params.len() {
-                                    let is_placeholder = f.generic.params.iter().any(|gp| gp.name == *part);
+                                    let is_placeholder =
+                                        f.generic.params.iter().any(|gp| gp.name == *part);
                                     if !is_placeholder {
                                         choices_for_params[idx].insert(part.clone());
                                     }
@@ -1155,9 +1291,13 @@ fn main() {
                 for (idx, param) in f.generic.params.iter_mut().enumerate() {
                     if originally_unconstrained_funcs.contains(&(f.name.clone(), idx)) {
                         let original_len = param.constraints.len();
-                        let mut new_constraints: Vec<String> = choices_for_params[idx].iter().cloned().collect();
+                        let mut new_constraints: Vec<String> =
+                            choices_for_params[idx].iter().cloned().collect();
                         new_constraints.sort();
-                        param.constraints = new_constraints.iter().map(|c| c.parse::<Type>().unwrap()).collect();
+                        param.constraints = new_constraints
+                            .iter()
+                            .map(|c| c.parse::<Type>().unwrap())
+                            .collect();
                         if param.constraints.len() != original_len {
                             added_any = true;
                         }
@@ -1183,17 +1323,12 @@ fn main() {
             generate_combinations(&s.generic.params, 0, &mut current, &mut combinations);
 
             for choices in &combinations {
-                let suffix: String = choices.iter().map(|c| format!("_{}", c.replace("::", "_"))).collect();
-                let new_name = sanitize_name(&format!(
-                    "{}{}",
-                    s.name,
-                    suffix
-                ));
-                let remap_key = format!(
-                    "{}<{}>",
-                    s.name,
-                    choices.join(",")
-                );
+                let suffix: String = choices
+                    .iter()
+                    .map(|c| format!("_{}", c.replace("::", "_")))
+                    .collect();
+                let new_name = sanitize_name(&format!("{}{}", s.name, suffix));
+                let remap_key = format!("{}<{}>", s.name, choices.join(","));
                 type_remap.insert(remap_key, new_name.clone());
                 let short_name = s.name.split("::").last().unwrap_or(&s.name);
                 let short_remap_key = format!("{}<{}>", short_name, choices.join(","));
@@ -1217,17 +1352,11 @@ fn main() {
                         new_f.name = format!("{}::{}", new_name, method_name);
                         new_f.parent_struct = Some(new_name.clone());
                         new_f.generic = GenericParams::default();
-                        new_f.return_ty = apply_multi_substitute_type(
-                            &f.return_ty,
-                            &s.generic.params,
-                            &choices,
-                        );
+                        new_f.return_ty =
+                            apply_multi_substitute_type(&f.return_ty, &s.generic.params, &choices);
                         for param in &mut new_f.params {
-                            param.ty = apply_multi_substitute_type(
-                                &param.ty,
-                                &s.generic.params,
-                                &choices,
-                            );
+                            param.ty =
+                                apply_multi_substitute_type(&param.ty, &s.generic.params, &choices);
                         }
                         if !new_f.params.is_empty() && new_f.params[0].name == "self" {
                             new_f.params[0].ty = new_name.parse::<Type>().unwrap();
@@ -1252,7 +1381,7 @@ fn main() {
                     attributes: s.attributes.clone(),
                 });
             }
-            
+
             if combinations.is_empty() {
                 for f in &parsed_funcs {
                     if f.parent_struct.as_deref() == Some(s.name.as_str()) {
@@ -1301,7 +1430,11 @@ fn main() {
             let generic = &f.generic.params[0];
             for constraint in &generic.constraints {
                 let mut new_f = f.clone();
-                new_f.name = sanitize_name(&format!("{}_{}", f.name, constraint.to_string().replace("::", "_")));
+                new_f.name = sanitize_name(&format!(
+                    "{}_{}",
+                    f.name,
+                    constraint.to_string().replace("::", "_")
+                ));
                 new_f.generic = GenericParams::default();
                 new_f.return_ty = f.return_ty.substitute(&generic.name, constraint);
                 for param in &mut new_f.params {
@@ -1330,7 +1463,11 @@ fn main() {
 
     let mut optimized_funcs = Vec::new();
     for mut f in funcs {
-        f.body = f.body.iter().map(|s| inline_calls_in_stmt(s, &func_map)).collect();
+        f.body = f
+            .body
+            .iter()
+            .map(|s| inline_calls_in_stmt(s, &func_map))
+            .collect();
         f.body = pass_loop_unswitch_block(&f.body);
         f.body = optimize_block(&f.body);
         optimized_funcs.push(f);
@@ -1391,7 +1528,13 @@ fn main() {
 
     let (final_wat, filtered_structs) = {
         crate::codegen::set_rename_aliases(rename_aliases);
-        generate_wat(&optimized_funcs, &mono_structs, &string_literals, &parsed_consts, &imports_registry)
+        generate_wat(
+            &optimized_funcs,
+            &mono_structs,
+            &string_literals,
+            &parsed_consts,
+            &imports_registry,
+        )
     };
     if crate::diagnostics::has_errors() {
         crate::diagnostics::print_diagnostics();
@@ -1438,8 +1581,16 @@ fn main() {
     }
 
     let js_path = Path::new(output_dir).join(format!("{}.js", input_stem));
-    std::fs::write(&js_path, generate_js_bindings(&filtered_structs, &string_literals, &variadic_funcs, Some(&final_wat)))
-        .expect("Failed to write JS bindings");
+    std::fs::write(
+        &js_path,
+        generate_js_bindings(
+            &filtered_structs,
+            &string_literals,
+            &variadic_funcs,
+            Some(&final_wat),
+        ),
+    )
+    .expect("Failed to write JS bindings");
 
     println!(
         "Successfully compiled {} to {} and {}",
@@ -1456,7 +1607,10 @@ fn qualify_type(ty: &Type, current_ns: &str, structs: &HashMap<String, StructDef
     match ty {
         Type::Struct(name, args) => {
             let resolved_name = crate::codegen::resolve_struct_name(name, structs);
-            let resolved_args = args.iter().map(|arg| qualify_type(arg, current_ns, structs)).collect();
+            let resolved_args = args
+                .iter()
+                .map(|arg| qualify_type(arg, current_ns, structs))
+                .collect();
             Type::Struct(resolved_name, resolved_args)
         }
         Type::GenericParam(name) => {
@@ -1464,13 +1618,19 @@ fn qualify_type(ty: &Type, current_ns: &str, structs: &HashMap<String, StructDef
             Type::GenericParam(resolved_name)
         }
         Type::Array(inner) => Type::Array(Box::new(qualify_type(inner, current_ns, structs))),
-        Type::Tuple(elems) => Type::Tuple(elems.iter().map(|el| qualify_type(el, current_ns, structs)).collect()),
-        Type::Function(params, ret) => {
-            Type::Function(
-                params.iter().map(|p| qualify_type(p, current_ns, structs)).collect(),
-                Box::new(qualify_type(ret, current_ns, structs))
-            )
-        }
+        Type::Tuple(elems) => Type::Tuple(
+            elems
+                .iter()
+                .map(|el| qualify_type(el, current_ns, structs))
+                .collect(),
+        ),
+        Type::Function(params, ret) => Type::Function(
+            params
+                .iter()
+                .map(|p| qualify_type(p, current_ns, structs))
+                .collect(),
+            Box::new(qualify_type(ret, current_ns, structs)),
+        ),
         _ => ty.clone(),
     }
 }
@@ -1478,19 +1638,34 @@ fn qualify_type(ty: &Type, current_ns: &str, structs: &HashMap<String, StructDef
 fn qualify_stmt(stmt: &Stmt, current_ns: &str, structs: &HashMap<String, StructDef>) -> Stmt {
     let result = match stmt {
         Stmt::Let(name, ty_opt, expr) => {
-            let new_ty = ty_opt.as_ref().map(|t| qualify_type(t, current_ns, structs));
-            Stmt::Let(name.clone(), new_ty, qualify_expr(expr, current_ns, structs))
+            let new_ty = ty_opt
+                .as_ref()
+                .map(|t| qualify_type(t, current_ns, structs));
+            Stmt::Let(
+                name.clone(),
+                new_ty,
+                qualify_expr(expr, current_ns, structs),
+            )
         }
         Stmt::LetTuple(bindings, expr) => {
-            let new_bindings = bindings.iter().map(|(name, ty)| {
-                (name.clone(), qualify_type(ty, current_ns, structs))
-            }).collect();
+            let new_bindings = bindings
+                .iter()
+                .map(|(name, ty)| (name.clone(), qualify_type(ty, current_ns, structs)))
+                .collect();
             Stmt::LetTuple(new_bindings, qualify_expr(expr, current_ns, structs))
         }
         Stmt::ExprStmt(expr) => Stmt::ExprStmt(qualify_expr(expr, current_ns, structs)),
-        Stmt::Return(opt_expr) => Stmt::Return(opt_expr.as_ref().map(|e| qualify_expr(e, current_ns, structs))),
-        Stmt::Assign(name, expr) => Stmt::Assign(name.clone(), qualify_expr(expr, current_ns, structs)),
-        Stmt::AssignPlus(name, expr) => Stmt::AssignPlus(name.clone(), qualify_expr(expr, current_ns, structs)),
+        Stmt::Return(opt_expr) => Stmt::Return(
+            opt_expr
+                .as_ref()
+                .map(|e| qualify_expr(e, current_ns, structs)),
+        ),
+        Stmt::Assign(name, expr) => {
+            Stmt::Assign(name.clone(), qualify_expr(expr, current_ns, structs))
+        }
+        Stmt::AssignPlus(name, expr) => {
+            Stmt::AssignPlus(name.clone(), qualify_expr(expr, current_ns, structs))
+        }
         Stmt::AssignIndex(arr, idx, val) => Stmt::AssignIndex(
             Box::new(qualify_expr(arr, current_ns, structs)),
             Box::new(qualify_expr(idx, current_ns, structs)),
@@ -1502,16 +1677,29 @@ fn qualify_stmt(stmt: &Stmt, current_ns: &str, structs: &HashMap<String, StructD
             qualify_expr(val, current_ns, structs),
         ),
         Stmt::If(cond, body, else_body) => {
-            let new_body = body.iter().map(|s| qualify_stmt(s, current_ns, structs)).collect();
-            let new_else = else_body.as_ref().map(|eb| eb.iter().map(|s| qualify_stmt(s, current_ns, structs)).collect());
+            let new_body = body
+                .iter()
+                .map(|s| qualify_stmt(s, current_ns, structs))
+                .collect();
+            let new_else = else_body.as_ref().map(|eb| {
+                eb.iter()
+                    .map(|s| qualify_stmt(s, current_ns, structs))
+                    .collect()
+            });
             Stmt::If(qualify_expr(cond, current_ns, structs), new_body, new_else)
         }
         Stmt::While(cond, body) => {
-            let new_body = body.iter().map(|s| qualify_stmt(s, current_ns, structs)).collect();
+            let new_body = body
+                .iter()
+                .map(|s| qualify_stmt(s, current_ns, structs))
+                .collect();
             Stmt::While(qualify_expr(cond, current_ns, structs), new_body)
         }
         Stmt::For(loop_var, target, body) => {
-            let new_body = body.iter().map(|s| qualify_stmt(s, current_ns, structs)).collect();
+            let new_body = body
+                .iter()
+                .map(|s| qualify_stmt(s, current_ns, structs))
+                .collect();
             Stmt::For(loop_var.clone(), target.clone(), new_body)
         }
     };
@@ -1531,7 +1719,9 @@ fn qualify_expr(expr: &Expr, current_ns: &str, structs: &HashMap<String, StructD
         Expr::MethodCall(obj, method, args) => Expr::MethodCall(
             Box::new(qualify_expr(obj, current_ns, structs)),
             method.clone(),
-            args.iter().map(|a| qualify_expr(a, current_ns, structs)).collect(),
+            args.iter()
+                .map(|a| qualify_expr(a, current_ns, structs))
+                .collect(),
         ),
         Expr::FieldAccess(obj, field) => Expr::FieldAccess(
             Box::new(qualify_expr(obj, current_ns, structs)),
@@ -1542,7 +1732,10 @@ fn qualify_expr(expr: &Expr, current_ns: &str, structs: &HashMap<String, StructD
             let resolved_name = qualify_type(&name_ty, current_ns, structs).to_string();
             Expr::StructInit(
                 resolved_name,
-                fields.iter().map(|(n, e)| (n.clone(), qualify_expr(e, current_ns, structs))).collect(),
+                fields
+                    .iter()
+                    .map(|(n, e)| (n.clone(), qualify_expr(e, current_ns, structs)))
+                    .collect(),
             )
         }
         Expr::Call(name, args) => {
@@ -1553,9 +1746,15 @@ fn qualify_expr(expr: &Expr, current_ns: &str, structs: &HashMap<String, StructD
                 let chars: Vec<char> = name.chars().collect();
                 let mut i = 0;
                 while i < chars.len() {
-                    if chars[i] == '<' { depth += 1; }
-                    else if chars[i] == '>' { depth -= 1; }
-                    else if chars[i] == ':' && i + 1 < chars.len() && chars[i+1] == ':' && depth == 0 {
+                    if chars[i] == '<' {
+                        depth += 1;
+                    } else if chars[i] == '>' {
+                        depth -= 1;
+                    } else if chars[i] == ':'
+                        && i + 1 < chars.len()
+                        && chars[i + 1] == ':'
+                        && depth == 0
+                    {
                         last_colon_idx = Some(i);
                         i += 1;
                     }
@@ -1565,14 +1764,17 @@ fn qualify_expr(expr: &Expr, current_ns: &str, structs: &HashMap<String, StructD
                     let struct_part = &name[..idx];
                     let method_part = &name[idx + 2..];
                     if let Ok(struct_ty) = Type::from_str(struct_part) {
-                        let resolved_struct = qualify_type(&struct_ty, current_ns, structs).to_string();
+                        let resolved_struct =
+                            qualify_type(&struct_ty, current_ns, structs).to_string();
                         resolved_name = format!("{}::{}", resolved_struct, method_part);
                     }
                 }
             }
             Expr::Call(
                 resolved_name,
-                args.iter().map(|a| qualify_expr(a, current_ns, structs)).collect(),
+                args.iter()
+                    .map(|a| qualify_expr(a, current_ns, structs))
+                    .collect(),
             )
         }
         Expr::IndexAccess(arr, idx) => Expr::IndexAccess(
@@ -1581,18 +1783,26 @@ fn qualify_expr(expr: &Expr, current_ns: &str, structs: &HashMap<String, StructD
         ),
         Expr::New(ty, args) => Expr::New(
             qualify_type(ty, current_ns, structs),
-            args.iter().map(|a| qualify_expr(a, current_ns, structs)).collect(),
+            args.iter()
+                .map(|a| qualify_expr(a, current_ns, structs))
+                .collect(),
         ),
         Expr::If(cond, then_b, else_b) => {
             let (t_stmts, t_val) = &**then_b;
             let new_then = Box::new((
-                t_stmts.iter().map(|s| qualify_stmt(s, current_ns, structs)).collect(),
+                t_stmts
+                    .iter()
+                    .map(|s| qualify_stmt(s, current_ns, structs))
+                    .collect(),
                 t_val.as_ref().map(|v| qualify_expr(v, current_ns, structs)),
             ));
             let new_else = else_b.as_ref().map(|eb| {
                 let (e_stmts, e_val) = &**eb;
                 Box::new((
-                    e_stmts.iter().map(|s| qualify_stmt(s, current_ns, structs)).collect(),
+                    e_stmts
+                        .iter()
+                        .map(|s| qualify_stmt(s, current_ns, structs))
+                        .collect(),
                     e_val.as_ref().map(|v| qualify_expr(v, current_ns, structs)),
                 ))
             });
@@ -1604,15 +1814,26 @@ fn qualify_expr(expr: &Expr, current_ns: &str, structs: &HashMap<String, StructD
         }
         Expr::Match(cond, arms) => Expr::Match(
             Box::new(qualify_expr(cond, current_ns, structs)),
-            arms.iter().map(|arm| MatchArm {
-                pattern: arm.pattern.clone(),
-                body: arm.body.iter().map(|s| qualify_stmt(s, current_ns, structs)).collect(),
-                val: arm.val.as_ref().map(|v| qualify_expr(v, current_ns, structs)),
-            }).collect(),
+            arms.iter()
+                .map(|arm| MatchArm {
+                    pattern: arm.pattern.clone(),
+                    body: arm
+                        .body
+                        .iter()
+                        .map(|s| qualify_stmt(s, current_ns, structs))
+                        .collect(),
+                    val: arm
+                        .val
+                        .as_ref()
+                        .map(|v| qualify_expr(v, current_ns, structs)),
+                })
+                .collect(),
         ),
         Expr::InvokeFuncPtr(func, args) => Expr::InvokeFuncPtr(
             Box::new(qualify_expr(func, current_ns, structs)),
-            args.iter().map(|a| qualify_expr(a, current_ns, structs)).collect(),
+            args.iter()
+                .map(|a| qualify_expr(a, current_ns, structs))
+                .collect(),
         ),
         Expr::Closure(func) => {
             let mut new_func = func.clone();
@@ -1620,25 +1841,48 @@ fn qualify_expr(expr: &Expr, current_ns: &str, structs: &HashMap<String, StructD
             for p in &mut new_func.params {
                 p.ty = qualify_type(&p.ty, current_ns, structs);
             }
-            new_func.body = func.body.iter().map(|s| qualify_stmt(s, current_ns, structs)).collect();
+            new_func.body = func
+                .body
+                .iter()
+                .map(|s| qualify_stmt(s, current_ns, structs))
+                .collect();
             Expr::Closure(new_func)
         }
         Expr::ClosureInstantiate(name, env, captured) => Expr::ClosureInstantiate(
             name.clone(),
             env.clone(),
-            captured.iter().map(|a| qualify_expr(a, current_ns, structs)).collect(),
+            captured
+                .iter()
+                .map(|a| qualify_expr(a, current_ns, structs))
+                .collect(),
         ),
         Expr::Cast(e, ty) => Expr::Cast(
             Box::new(qualify_expr(e, current_ns, structs)),
             qualify_type(ty, current_ns, structs),
         ),
         Expr::Spread(e) => Expr::Spread(Box::new(qualify_expr(e, current_ns, structs))),
-        Expr::Tuple(exprs) => Expr::Tuple(exprs.iter().map(|e| qualify_expr(e, current_ns, structs)).collect()),
+        Expr::Tuple(exprs) => Expr::Tuple(
+            exprs
+                .iter()
+                .map(|e| qualify_expr(e, current_ns, structs))
+                .collect(),
+        ),
         Expr::MapLit(pairs) => Expr::MapLit(
-            pairs.iter().map(|(k, v)| (qualify_expr(k, current_ns, structs), qualify_expr(v, current_ns, structs))).collect()
+            pairs
+                .iter()
+                .map(|(k, v)| {
+                    (
+                        qualify_expr(k, current_ns, structs),
+                        qualify_expr(v, current_ns, structs),
+                    )
+                })
+                .collect(),
         ),
         Expr::VecLit(elems) => Expr::VecLit(
-            elems.iter().map(|e| qualify_expr(e, current_ns, structs)).collect()
+            elems
+                .iter()
+                .map(|e| qualify_expr(e, current_ns, structs))
+                .collect(),
         ),
         _ => expr.clone(),
     };
@@ -1646,6 +1890,73 @@ fn qualify_expr(expr: &Expr, current_ns: &str, structs: &HashMap<String, StructD
         register_span(&result, span);
     }
     result
+}
+
+pub fn parse_for_lsp(input_path: &Path) {
+    crate::ast::clear_span_and_file_tables();
+
+    let mut visited = HashSet::new();
+    let mut parse_cache = HashMap::new();
+    let mut imports_registry = HashMap::new();
+    let mut namespace_aliases = HashMap::new();
+    let mut rename_aliases = HashMap::new();
+    let (structs, funcs, impls, _traits, consts) = parse_file(
+        input_path,
+        None,
+        &mut visited,
+        &mut parse_cache,
+        &mut imports_registry,
+        &mut namespace_aliases,
+        &mut rename_aliases,
+    );
+
+    let struct_meta: Vec<_> = structs
+        .iter()
+        .map(|s| (crate::ast::get_span(s), crate::ast::get_file(s)))
+        .collect();
+    let func_meta: Vec<_> = funcs
+        .iter()
+        .map(|f| (crate::ast::get_span(f), crate::ast::get_file(f)))
+        .collect();
+    let impl_meta: Vec<_> = impls
+        .iter()
+        .map(|i| (crate::ast::get_span(i), crate::ast::get_file(i)))
+        .collect();
+    let const_meta: Vec<_> = consts
+        .iter()
+        .map(|c| (crate::ast::get_span(c), crate::ast::get_file(c)))
+        .collect();
+
+    {
+        let mut cache = get_ast_cache().write().unwrap();
+        *cache = AstCache {
+            structs,
+            funcs,
+            impls,
+            consts,
+        };
+
+        for (i, (span, file)) in struct_meta.iter().enumerate() {
+            if let Some(span) = span {
+                crate::ast::register_span_with_file(&cache.structs[i], *span, file.clone());
+            }
+        }
+        for (i, (span, file)) in func_meta.iter().enumerate() {
+            if let Some(span) = span {
+                crate::ast::register_span_with_file(&cache.funcs[i], *span, file.clone());
+            }
+        }
+        for (i, (span, file)) in impl_meta.iter().enumerate() {
+            if let Some(span) = span {
+                crate::ast::register_span_with_file(&cache.impls[i], *span, file.clone());
+            }
+        }
+        for (i, (span, file)) in const_meta.iter().enumerate() {
+            if let Some(span) = span {
+                crate::ast::register_span_with_file(&cache.consts[i], *span, file.clone());
+            }
+        }
+    }
 }
 
 pub fn compile_only_for_diagnostics(input_path: &Path) {
@@ -1661,7 +1972,15 @@ pub fn compile_only_for_diagnostics(input_path: &Path) {
     let mut namespace_aliases = HashMap::new();
     let mut rename_aliases = HashMap::new();
     let (mut parsed_structs, mut parsed_funcs, mut parsed_impls, _parsed_traits, mut parsed_consts) =
-        parse_file(input_path, None, &mut visited, &mut cache, &mut imports_registry, &mut namespace_aliases, &mut rename_aliases);
+        parse_file(
+            input_path,
+            None,
+            &mut visited,
+            &mut cache,
+            &mut imports_registry,
+            &mut namespace_aliases,
+            &mut rename_aliases,
+        );
 
     if crate::diagnostics::has_errors() {
         return;
@@ -1686,7 +2005,7 @@ pub fn compile_only_for_diagnostics(input_path: &Path) {
     for s in &parsed_structs {
         structs_map.insert(s.name.clone(), s.clone());
     }
-    
+
     for s in &mut parsed_structs {
         let ns = crate::codegen::get_namespace(&s.name);
         crate::codegen::set_current_namespace(ns.clone());
@@ -1701,7 +2020,11 @@ pub fn compile_only_for_diagnostics(input_path: &Path) {
         for param in &mut f.params {
             param.ty = qualify_type(&param.ty, &ns, &structs_map);
         }
-        let qualified_body: Vec<Stmt> = f.body.iter().map(|s| qualify_stmt(s, &ns, &structs_map)).collect();
+        let qualified_body: Vec<Stmt> = f
+            .body
+            .iter()
+            .map(|s| qualify_stmt(s, &ns, &structs_map))
+            .collect();
         for (old_s, new_s) in f.body.iter().zip(&qualified_body) {
             copy_spans_stmt(old_s, new_s);
         }
@@ -1716,7 +2039,11 @@ pub fn compile_only_for_diagnostics(input_path: &Path) {
         c.value = qualified_value;
     }
     for imp in &mut parsed_impls {
-        let ns = imp.trait_name.as_ref().map(|t| crate::codegen::get_namespace(&t.to_string())).unwrap_or_else(|| crate::codegen::get_namespace(&imp.target_ty.to_string()));
+        let ns = imp
+            .trait_name
+            .as_ref()
+            .map(|t| crate::codegen::get_namespace(&t.to_string()))
+            .unwrap_or_else(|| crate::codegen::get_namespace(&imp.target_ty.to_string()));
         crate::codegen::set_current_namespace(ns.clone());
         if let Some(ref mut trait_name) = imp.trait_name {
             *trait_name = qualify_type(trait_name, &ns, &structs_map);
@@ -1729,7 +2056,11 @@ pub fn compile_only_for_diagnostics(input_path: &Path) {
             for p in &mut f.params {
                 p.ty = qualify_type(&p.ty, &f_ns, &structs_map);
             }
-            let qualified_body: Vec<Stmt> = f.body.iter().map(|s| qualify_stmt(s, &f_ns, &structs_map)).collect();
+            let qualified_body: Vec<Stmt> = f
+                .body
+                .iter()
+                .map(|s| qualify_stmt(s, &f_ns, &structs_map))
+                .collect();
             for (old_s, new_s) in f.body.iter().zip(&qualified_body) {
                 copy_spans_stmt(old_s, new_s);
             }
@@ -1823,9 +2154,8 @@ pub fn compile_only_for_diagnostics(input_path: &Path) {
 }
 
 fn copy_spans_expr(old: &Expr, new: &Expr) {
-    let span = crate::ast::get_span(old);
-    if let Some(span) = span {
-        crate::ast::register_span(new, span);
+    if let Some(span) = crate::ast::get_span(old) {
+        crate::ast::register_span_with_file(new, span, crate::ast::get_file(old));
     }
     match (old, new) {
         (Expr::Binary(o_l, _, o_r), Expr::Binary(n_l, _, n_r)) => {
@@ -1935,9 +2265,8 @@ fn copy_spans_expr(old: &Expr, new: &Expr) {
 }
 
 fn copy_spans_stmt(old: &Stmt, new: &Stmt) {
-    let span = crate::ast::get_span(old);
-    if let Some(span) = span {
-        crate::ast::register_span(new, span);
+    if let Some(span) = crate::ast::get_span(old) {
+        crate::ast::register_span_with_file(new, span, crate::ast::get_file(old));
     }
     match (old, new) {
         (Stmt::Let(_, _, o_e), Stmt::Let(_, _, n_e)) => {
@@ -1952,7 +2281,8 @@ fn copy_spans_stmt(old: &Stmt, new: &Stmt) {
         (Stmt::Return(Some(o_e)), Stmt::Return(Some(n_e))) => {
             copy_spans_expr(o_e, n_e);
         }
-        (Stmt::Assign(_, o_e), Stmt::Assign(_, n_e)) | (Stmt::AssignPlus(_, o_e), Stmt::AssignPlus(_, n_e)) => {
+        (Stmt::Assign(_, o_e), Stmt::Assign(_, n_e))
+        | (Stmt::AssignPlus(_, o_e), Stmt::AssignPlus(_, n_e)) => {
             copy_spans_expr(o_e, n_e);
         }
         (Stmt::AssignIndex(o_arr, o_idx, o_val), Stmt::AssignIndex(n_arr, n_idx, n_val)) => {
@@ -2000,12 +2330,14 @@ pub struct AstCache {
 static AST_CACHE: OnceLock<RwLock<AstCache>> = OnceLock::new();
 
 pub fn get_ast_cache() -> &'static RwLock<AstCache> {
-    AST_CACHE.get_or_init(|| RwLock::new(AstCache {
-        structs: Vec::new(),
-        funcs: Vec::new(),
-        impls: Vec::new(),
-        consts: Vec::new(),
-    }))
+    AST_CACHE.get_or_init(|| {
+        RwLock::new(AstCache {
+            structs: Vec::new(),
+            funcs: Vec::new(),
+            impls: Vec::new(),
+            consts: Vec::new(),
+        })
+    })
 }
 
 pub fn clear_ast_cache() {
@@ -2017,5 +2349,3 @@ pub fn clear_ast_cache() {
         w.consts.clear();
     }
 }
-
-
