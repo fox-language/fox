@@ -277,10 +277,23 @@ pub fn validate_call_types_in_stmt(
 ) {
     match stmt {
         Stmt::Let(name, ty_annot, expr) => {
+            let expr_ty = safe_get_expr_type(expr, sym, funcs, structs);
             let ty = if let Some(t) = ty_annot {
-                t.to_string()
+                let annot_str = t.to_string();
+                if !has_generic_params_in_type(&annot_str, &[]) && !has_generic_params_in_type(&expr_ty, &[])
+                    && expr_ty != "unknown" && expr_ty != "void" && expr_ty != "anyref"
+                    && !annot_str.contains('<') && !expr_ty.contains('<')
+                {
+                    if !is_annotation_compatible(&expr_ty, &annot_str, structs) {
+                        crate::diagnostics::report_error(
+                            format!("Type mismatch: expected '{}', found '{}'", annot_str, expr_ty),
+                            crate::ast::get_span(expr),
+                        );
+                    }
+                }
+                annot_str
             } else {
-                safe_get_expr_type(expr, sym, funcs, structs)
+                expr_ty
             };
             sym.insert(name.clone(), ty);
             validate_call_types_in_expr(expr, sym, funcs, structs);
@@ -339,6 +352,19 @@ pub fn validate_call_types_in_stmt(
 fn is_generic_param(ty: &str) -> bool {
     let known_generics = ["T", "K", "V", "E", "A", "B", "C", "T1", "T2", "T3", "Key", "Value", "Item", "Error"];
     known_generics.contains(&ty)
+}
+
+fn is_annotation_compatible(actual: &str, expected: &str, structs: &HashMap<String, StructDef>) -> bool {
+    if is_compatible(actual, expected, structs) {
+        return true;
+    }
+    // Allow numeric literal widening: i32 can be used where i64/u64 is expected
+    let actual_is_32 = actual == "i32" || actual == "u32" || actual == "byte" || actual == "bool";
+    let expected_is_64 = expected == "i64" || expected == "u64";
+    if actual_is_32 && expected_is_64 {
+        return true;
+    }
+    false
 }
 
 fn has_generic_params_in_type(ty: &str, generic_params: &[String]) -> bool {
@@ -631,6 +657,9 @@ pub fn validate_call_types_in_func(
     funcs: &HashMap<String, Function>,
     structs: &HashMap<String, StructDef>,
 ) {
+    if f.is_compiler {
+        return;
+    }
     let mut local_sym = HashMap::new();
     for p in &f.params {
         local_sym.insert(p.name.clone(), p.ty.to_string());

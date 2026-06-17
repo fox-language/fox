@@ -666,4 +666,75 @@ pub fn test_error(): void {
             }
         }
     });
+
+    test("fails when let type annotation mismatches initializer (string to int)", () => {
+        const errorTestFile = path.join(outDir, "error_test.fox");
+        fs.writeFileSync(errorTestFile, `
+pub fn test_error(): void {
+    let foo: i32 = "asdf";
+}
+`);
+        try {
+            execSync(`cargo run -- "${errorTestFile}" -o "${outDir}"`, {
+                stdio: 'pipe',
+            });
+            throw new Error("Compilation should have failed but succeeded");
+        } catch (err) {
+            const stderr = err.stderr ? err.stderr.toString() : err.message;
+            if (!stderr.includes("Type mismatch: expected 'i32', found 'str'")) {
+                throw new Error(`Unexpected compiler output: ${stderr}`);
+            }
+        } finally {
+            if (fs.existsSync(errorTestFile)) {
+                fs.unlinkSync(errorTestFile);
+            }
+        }
+    });
+
+    test("fails when let type annotation mismatches initializer (string to bool)", () => {
+        const errorTestFile = path.join(outDir, "error_test.fox");
+        fs.writeFileSync(errorTestFile, `
+pub fn test_error(): void {
+    let bar: bool = "hello";
+}
+`);
+        try {
+            execSync(`cargo run -- "${errorTestFile}" -o "${outDir}"`, {
+                stdio: 'pipe',
+            });
+            throw new Error("Compilation should have failed but succeeded");
+        } catch (err) {
+            const stderr = err.stderr ? err.stderr.toString() : err.message;
+            if (!stderr.includes("Type mismatch: expected 'bool', found 'str'")) {
+                throw new Error(`Unexpected compiler output: ${stderr}`);
+            }
+        } finally {
+            if (fs.existsSync(errorTestFile)) {
+                fs.unlinkSync(errorTestFile);
+            }
+        }
+    });
+
+    test("succeeds when let type annotation matches initializer", () => {
+        const errorTestFile = path.join(outDir, "error_test.fox");
+        fs.writeFileSync(errorTestFile, `
+pub fn test_error(): void {
+    let foo: i32 = 42;
+    let bar: str = "hello";
+    let baz: f64 = 3.14;
+}
+`);
+        try {
+            execSync(`cargo run -- "${errorTestFile}" -o "${outDir}"`, {
+                stdio: 'pipe',
+            });
+        } catch (err) {
+            const stderr = err.stderr ? err.stderr.toString() : err.message;
+            throw new Error(`Compilation should have succeeded but failed: ${stderr}`);
+        } finally {
+            if (fs.existsSync(errorTestFile)) {
+                fs.unlinkSync(errorTestFile);
+            }
+        }
+    });
 });

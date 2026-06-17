@@ -102,8 +102,10 @@ impl<'a> Parser<'a> {
     fn span_from(&self, start: Span) -> Span {
         Span::new(start.start, self.previous_span.end, start.line, start.column)
     }
-    fn register_span<T>(&self, node: &T, start: Span) {
-        register_span(node, self.span_from(start));
+    fn register_span<T>(&self, node: &T, start: Span) -> Span {
+        let span = self.span_from(start);
+        register_span(node, span);
+        span
     }
     pub fn current_as_identifier(&self) -> Option<String> {
         match &self.current_token {
@@ -368,15 +370,20 @@ impl<'a> Parser<'a> {
             let next_token = self.current_token.clone();
 
             if next_token == Token::Struct {
-                items.push(Item::Struct(self.parse_struct(is_pub, attributes.clone())));
+                let (s, span) = self.parse_struct(is_pub, attributes.clone());
+                items.push(Item::Struct(s, span));
             } else if next_token == Token::Enum {
-                items.push(Item::Struct(self.parse_enum(is_pub, attributes.clone())));
+                let (s, span) = self.parse_enum(is_pub, attributes.clone());
+                items.push(Item::Struct(s, span));
             } else if next_token == Token::Trait {
-                items.push(Item::Trait(self.parse_trait(is_pub, attributes.clone())));
+                let (t, span) = self.parse_trait(is_pub, attributes.clone());
+                items.push(Item::Trait(t, span));
             } else if next_token == Token::Impl {
-                items.push(Item::Impl(self.parse_impl(is_pub, attributes.clone())));
+                let (imp, span) = self.parse_impl(is_pub, attributes.clone());
+                items.push(Item::Impl(imp, span));
             } else if next_token == Token::Const || next_token == Token::Let {
-                items.push(Item::Const(self.parse_const_or_let(is_pub, attributes.clone())));
+                let (c, span) = self.parse_const_or_let(is_pub, attributes.clone());
+                items.push(Item::Const(c, span));
             } else if self.current_token == Token::Use {
                 self.advance();
 
@@ -468,13 +475,14 @@ impl<'a> Parser<'a> {
                     items.push(Item::Use { path, symbols });
                     }
             } else {
-                items.push(Item::Function(self.parse_function(None, is_pub, attributes.clone())));
+                let (f, span) = self.parse_function(None, is_pub, attributes.clone());
+                items.push(Item::Function(f, span));
             }
         }
         items
     }
 
-    pub fn parse_const_or_let(&mut self, is_pub: bool, attributes: Vec<Attribute>) -> ConstDef {
+    pub fn parse_const_or_let(&mut self, is_pub: bool, attributes: Vec<Attribute>) -> (ConstDef, Span) {
         let start_span = self.current_span;
         let is_mutable = if self.current_token == Token::Let {
             self.advance();
@@ -513,11 +521,11 @@ impl<'a> Parser<'a> {
         let node = ConstDef {
             is_pub,
             name, ty, value, attributes, is_mutable };
-        self.register_span(&node, start_span);
-        node
+        let span = self.span_from(start_span);
+        (node, span)
     }
 
-    pub fn parse_struct(&mut self, is_pub: bool, attributes: Vec<Attribute>) -> StructDef {
+    pub fn parse_struct(&mut self, is_pub: bool, attributes: Vec<Attribute>) -> (StructDef, Span) {
         let start_span = self.current_span;
         self.expect(Token::Struct);
         let name = match &self.current_token {
@@ -571,11 +579,11 @@ impl<'a> Parser<'a> {
             fields,
             methods: Vec::new(),
             is_enum: false, variants: Vec::new(), attributes };
-        self.register_span(&node, start_span);
-        node
+        let span = self.span_from(start_span);
+        (node, span)
     }
 
-    pub fn parse_enum(&mut self, is_pub: bool, attributes: Vec<Attribute>) -> StructDef {
+    pub fn parse_enum(&mut self, is_pub: bool, attributes: Vec<Attribute>) -> (StructDef, Span) {
         let start_span = self.current_span;
         self.expect(Token::Enum);
         let name = match &self.current_token {
@@ -701,11 +709,11 @@ impl<'a> Parser<'a> {
             fields,
             methods,
             is_enum: true, variants: variant_names, attributes };
-        self.register_span(&node, start_span);
-        node
+        let span = self.span_from(start_span);
+        (node, span)
     }
 
-    pub fn parse_trait(&mut self, is_pub: bool, attributes: Vec<Attribute>) -> TraitDef {
+    pub fn parse_trait(&mut self, is_pub: bool, attributes: Vec<Attribute>) -> (TraitDef, Span) {
         let start_span = self.current_span;
         self.expect(Token::Trait);
         let name = match &self.current_token {
@@ -790,11 +798,11 @@ impl<'a> Parser<'a> {
         let node = TraitDef {
             is_pub,
             name, generic, methods, attributes };
-        self.register_span(&node, start_span);
-        node
+        let span = self.span_from(start_span);
+        (node, span)
     }
 
-    pub fn parse_impl(&mut self, is_pub: bool, attributes: Vec<Attribute>) -> ImplDef {
+    pub fn parse_impl(&mut self, is_pub: bool, attributes: Vec<Attribute>) -> (ImplDef, Span) {
         let start_span = self.current_span;
         self.expect(Token::Impl);
         let mut generic = GenericParams::default();
@@ -835,17 +843,19 @@ impl<'a> Parser<'a> {
         self.expect(Token::LBrace);
         let mut methods = Vec::new();
         while self.current_token != Token::RBrace {
-            methods.push(self.parse_function(Some(target_ty.to_string()), false, Vec::new()));
+            let (f, f_span) = self.parse_function(Some(target_ty.to_string()), false, Vec::new());
+            crate::ast::register_span(&f, f_span);
+            methods.push(f);
         }
         self.expect(Token::RBrace);
         let node = ImplDef {
             is_pub,
             trait_name,
             generic, target_ty, methods, attributes };
-        self.register_span(&node, start_span);
-        node
+        let span = self.span_from(start_span);
+        (node, span)
     }
-    pub fn parse_function(&mut self, parent_struct: Option<String>, is_pub: bool, attributes: Vec<Attribute>) -> Function {
+    pub fn parse_function(&mut self, parent_struct: Option<String>, is_pub: bool, attributes: Vec<Attribute>) -> (Function, Span) {
         let start_span = self.current_span;
         let mut is_extern = false;
         let mut is_compiler = false;
@@ -907,14 +917,14 @@ impl<'a> Parser<'a> {
             } else {
                 self.expect(Token::LBrace);
                 while self.current_token != Token::RBrace {
-                    body.extend(self.parse_stmt());
+                    self.parse_stmt(&mut body);
                 }
                 self.expect(Token::RBrace);
             }
         } else {
             self.expect(Token::LBrace);
             while self.current_token != Token::RBrace {
-                body.extend(self.parse_stmt());
+                self.parse_stmt(&mut body);
             }
             self.expect(Token::RBrace);
         }
@@ -943,8 +953,11 @@ impl<'a> Parser<'a> {
             name: actual_name,
             generic,
             params, return_ty, body, attributes };
-        self.register_span(&node, start_span);
-        node
+        let span = self.span_from(start_span);
+        for param in &node.params {
+            register_span(param, span);
+        }
+        (node, span)
     }
     pub fn parse_match_pattern(&mut self) -> MatchPattern {
         match &self.current_token {
@@ -997,15 +1010,15 @@ impl<'a> Parser<'a> {
             let mut val = None;
             while self.current_token != Token::RBrace {
                 if self.current_token == Token::Let {
-                    stmts.extend(self.parse_stmt());
+                    self.parse_stmt(&mut stmts);
                 } else if self.current_token == Token::Return {
-                    stmts.extend(self.parse_stmt());
+                    self.parse_stmt(&mut stmts);
                 } else if self.current_token == Token::If {
-                    stmts.extend(self.parse_stmt());
+                    self.parse_stmt(&mut stmts);
                 } else if self.current_token == Token::While {
-                    stmts.extend(self.parse_stmt());
+                    self.parse_stmt(&mut stmts);
                 } else if self.current_token == Token::For {
-                    stmts.extend(self.parse_stmt());
+                    self.parse_stmt(&mut stmts);
                 } else {
                     let expr = self.parse_expr();
                     if self.current_token == Token::PlusAssign {
@@ -1048,13 +1061,14 @@ impl<'a> Parser<'a> {
             (vec![], Some(expr))
         }
     }
-    pub fn parse_stmt(&mut self) -> Vec<Stmt> {
+    pub fn parse_stmt(&mut self, out: &mut Vec<Stmt>) {
         let start_span = self.current_span;
         let stmts = self.parse_stmt_impl();
-        for stmt in &stmts {
-            self.register_span(stmt, start_span);
+        for stmt in stmts {
+            let span = self.span_from(start_span);
+            out.push(stmt);
+            crate::ast::register_span(out.last().unwrap(), span);
         }
-        stmts
     }
     fn parse_stmt_impl(&mut self) -> Vec<Stmt> {
         if self.current_token == Token::Let {
@@ -1134,7 +1148,7 @@ impl<'a> Parser<'a> {
                     self.expect(Token::LBrace);
                     let mut original_body = Vec::new();
                     while self.current_token != Token::RBrace {
-                        original_body.extend(self.parse_stmt());
+                        self.parse_stmt(&mut original_body);
                     }
                     self.expect(Token::RBrace);
 
@@ -1169,9 +1183,10 @@ impl<'a> Parser<'a> {
                     self.expect(Token::LBrace);
                     let mut body = Vec::new();
                     while self.current_token != Token::RBrace {
-                        body.extend(self.parse_stmt());
+                        self.parse_stmt(&mut body);
                     }
                     self.expect(Token::RBrace);
+
                     (pattern, expr, body)
                 };
 
@@ -1180,7 +1195,7 @@ impl<'a> Parser<'a> {
                     self.advance();
                     self.expect(Token::LBrace);
                     while self.current_token != Token::RBrace {
-                        else_body.extend(self.parse_stmt());
+                        self.parse_stmt(&mut else_body);
                     }
                     self.expect(Token::RBrace);
                 }
@@ -1194,7 +1209,7 @@ impl<'a> Parser<'a> {
                 self.expect(Token::LBrace);
                 let mut body = Vec::new();
                 while self.current_token != Token::RBrace {
-                    body.extend(self.parse_stmt());
+                    self.parse_stmt(&mut body);
                 }
                 self.expect(Token::RBrace);
                 let mut else_body = None;
@@ -1203,7 +1218,7 @@ impl<'a> Parser<'a> {
                     self.expect(Token::LBrace);
                     let mut e_body = Vec::new();
                     while self.current_token != Token::RBrace {
-                        e_body.extend(self.parse_stmt());
+                        self.parse_stmt(&mut e_body);
                     }
                     self.expect(Token::RBrace);
                     else_body = Some(e_body);
@@ -1263,7 +1278,7 @@ impl<'a> Parser<'a> {
                     self.expect(Token::LBrace);
                     let mut original_body = Vec::new();
                     while self.current_token != Token::RBrace {
-                        original_body.extend(self.parse_stmt());
+                        self.parse_stmt(&mut original_body);
                     }
                     self.expect(Token::RBrace);
 
@@ -1298,7 +1313,7 @@ impl<'a> Parser<'a> {
                     self.expect(Token::LBrace);
                     let mut body = Vec::new();
                     while self.current_token != Token::RBrace {
-                        body.extend(self.parse_stmt());
+                        self.parse_stmt(&mut body);
                     }
                     self.expect(Token::RBrace);
                     (pattern, expr, body)
@@ -1325,7 +1340,7 @@ impl<'a> Parser<'a> {
                 self.expect(Token::LBrace);
                 let mut body = Vec::new();
                 while self.current_token != Token::RBrace {
-                    body.extend(self.parse_stmt());
+                    self.parse_stmt(&mut body);
                 }
                 self.expect(Token::RBrace);
                 vec![Stmt::While(cond, body)]
@@ -1346,7 +1361,7 @@ impl<'a> Parser<'a> {
             self.expect(Token::LBrace);
             let mut body = Vec::new();
             while self.current_token != Token::RBrace {
-                body.extend(self.parse_stmt());
+                self.parse_stmt(&mut body);
             }
             self.expect(Token::RBrace);
             vec![Stmt::For(loop_var, iter_target, body)]
@@ -1558,7 +1573,7 @@ impl<'a> Parser<'a> {
                         self.advance();
                         let mut body = Vec::new();
                         while self.current_token != Token::RBrace && self.current_token != Token::Eof {
-                            body.extend(self.parse_stmt());
+                            self.parse_stmt(&mut body);
                         }
                         self.expect(Token::RBrace);
                         body

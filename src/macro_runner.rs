@@ -452,16 +452,37 @@ fn run_macros_inner(
     let mut added_anything = false;
     for item in items {
         match item {
-            Item::Struct(s) => { parsed_structs.push(s); added_anything = true; }
-            Item::Function(f) => { parsed_funcs.push(f); added_anything = true; }
-            Item::Impl(i) => {
+            Item::Struct(s, span) => {
+                parsed_structs.push(s);
+                if let Some(s) = parsed_structs.last() {
+                    crate::ast::register_span(s, span);
+                }
+                added_anything = true;
+            }
+            Item::Function(f, span) => {
+                parsed_funcs.push(f);
+                if let Some(f) = parsed_funcs.last() {
+                    crate::ast::register_span(f, span);
+                }
+                added_anything = true;
+            }
+            Item::Impl(i, span) => {
                 for f in i.methods.clone() {
                     parsed_funcs.push(f);
                 }
                 parsed_impls.push(i);
+                if let Some(i) = parsed_impls.last() {
+                    crate::ast::register_span(i, span);
+                }
                 added_anything = true;
             }
-            Item::Const(c) => { parsed_consts.push(c); added_anything = true; }
+            Item::Const(c, span) => {
+                parsed_consts.push(c);
+                if let Some(c) = parsed_consts.last() {
+                    crate::ast::register_span(c, span);
+                }
+                added_anything = true;
+            }
             _ => {}
         }
     }

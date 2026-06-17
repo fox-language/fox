@@ -281,13 +281,43 @@ fn parse_file(
                         }
                     }
 
-                    structs.extend(imported_structs);
-                    funcs.extend(imported_funcs);
-                    impls.extend(imported_impls);
-                    traits.extend(imported_traits);
-                    consts.extend(imported_consts);
+                    for s in imported_structs {
+                        let span = crate::ast::get_span(&s);
+                        structs.push(s);
+                        if let Some(span) = span {
+                            crate::ast::register_span(structs.last().unwrap(), span);
+                        }
+                    }
+                    for f in imported_funcs {
+                        let span = crate::ast::get_span(&f);
+                        funcs.push(f);
+                        if let Some(span) = span {
+                            crate::ast::register_span(funcs.last().unwrap(), span);
+                        }
+                    }
+                    for imp in imported_impls {
+                        let span = crate::ast::get_span(&imp);
+                        impls.push(imp);
+                        if let Some(span) = span {
+                            crate::ast::register_span(impls.last().unwrap(), span);
+                        }
+                    }
+                    for t in imported_traits {
+                        let span = crate::ast::get_span(&t);
+                        traits.push(t);
+                        if let Some(span) = span {
+                            crate::ast::register_span(traits.last().unwrap(), span);
+                        }
+                    }
+                    for c in imported_consts {
+                        let span = crate::ast::get_span(&c);
+                        consts.push(c);
+                        if let Some(span) = span {
+                            crate::ast::register_span(consts.last().unwrap(), span);
+                        }
+                    }
             }
-            Item::Struct(mut s) => {
+            Item::Struct(mut s, span) => {
                 for f in &s.methods {
                     if f.is_extern && f.name.starts_with("__fox_") && !is_std_file {
                         panic!("User-defined extern function '{}' cannot use the protected standard library prefix '__fox_'", f.name);
@@ -308,8 +338,11 @@ fn parse_file(
                     funcs.push(f);
                 }
                 structs.push(s);
+                if let Some(s) = structs.last() {
+                    crate::ast::register_span(s, span);
+                }
             }
-            Item::Function(mut f) => {
+            Item::Function(mut f, span) => {
                 if f.is_extern && f.name.starts_with("__fox_") && !is_std_file {
                     panic!("User-defined extern function '{}' cannot use the protected standard library prefix '__fox_'", f.name);
                 }
@@ -319,14 +352,20 @@ fn parse_file(
                     }
                 }
                 funcs.push(f);
+                if let Some(f) = funcs.last() {
+                    crate::ast::register_span(f, span);
+                }
             }
-            Item::Trait(mut t) => {
+            Item::Trait(mut t, span) => {
                 if let Some(ns) = namespace {
                     t.name = format!("{}::{}", ns, t.name);
                 }
                 traits.push(t);
+                if let Some(t) = traits.last() {
+                    crate::ast::register_span(t, span);
+                }
             }
-            Item::Impl(mut imp) => {
+            Item::Impl(mut imp, span) => {
                 for f in &imp.methods {
                     if f.is_extern && f.name.starts_with("__fox_") && !is_std_file {
                         panic!("User-defined extern function '{}' cannot use the protected standard library prefix '__fox_'", f.name);
@@ -374,8 +413,11 @@ fn parse_file(
                     }
                 }
                 impls.push(imp);
+                if let Some(imp) = impls.last() {
+                    crate::ast::register_span(imp, span);
+                }
             }
-            Item::Const(mut c) => {
+            Item::Const(mut c, span) => {
                 if c.name.starts_with("__fox_") && !is_std_file {
                     let kind = if c.is_mutable { "variable" } else { "constant" };
                     panic!("User-defined {} '{}' cannot use the protected standard library prefix '__fox_'", kind, c.name);
@@ -384,6 +426,9 @@ fn parse_file(
                     c.name = format!("{}::{}", ns, c.name);
                 }
                 consts.push(c);
+                if let Some(c) = consts.last() {
+                    crate::ast::register_span(c, span);
+                }
             }
         }
     }
@@ -1698,7 +1743,11 @@ pub fn compile_only_for_diagnostics(input_path: &Path) {
     let mut const_names = HashSet::new();
     for c in parsed_consts {
         if const_names.insert(c.name.clone()) {
+            let span = crate::ast::get_span(&c);
             unique_consts.push(c);
+            if let Some(span) = span {
+                crate::ast::register_span(unique_consts.last().unwrap(), span);
+            }
         }
     }
     parsed_consts = unique_consts;
@@ -1707,7 +1756,11 @@ pub fn compile_only_for_diagnostics(input_path: &Path) {
     let mut struct_names = HashSet::new();
     for s in parsed_structs {
         if struct_names.insert(s.name.clone()) {
+            let span = crate::ast::get_span(&s);
             unique_structs.push(s);
+            if let Some(span) = span {
+                crate::ast::register_span(unique_structs.last().unwrap(), span);
+            }
         }
     }
     parsed_structs = unique_structs;
@@ -1717,7 +1770,11 @@ pub fn compile_only_for_diagnostics(input_path: &Path) {
     for imp in parsed_impls {
         let key = (imp.trait_name.clone(), imp.target_ty.clone());
         if impl_keys.insert(key) {
+            let span = crate::ast::get_span(&imp);
             unique_impls.push(imp);
+            if let Some(span) = span {
+                crate::ast::register_span(unique_impls.last().unwrap(), span);
+            }
         }
     }
     parsed_impls = unique_impls;
@@ -1949,6 +2006,16 @@ pub fn get_ast_cache() -> &'static RwLock<AstCache> {
         impls: Vec::new(),
         consts: Vec::new(),
     }))
+}
+
+pub fn clear_ast_cache() {
+    if let Some(cache) = AST_CACHE.get() {
+        let mut w = cache.write().unwrap();
+        w.structs.clear();
+        w.funcs.clear();
+        w.impls.clear();
+        w.consts.clear();
+    }
 }
 
 

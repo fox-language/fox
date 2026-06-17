@@ -26,6 +26,13 @@ struct Backend {
 }
 
 impl Backend {
+    fn log(&self, msg: String) {
+        let client = self.client.clone();
+        tokio::spawn(async move {
+            client.log_message(MessageType::LOG, msg).await;
+        });
+    }
+
     async fn validate_document(&self, uri: Url) {
         let path = match uri.to_file_path() {
             Ok(p) => p,
@@ -47,15 +54,27 @@ impl Backend {
         // runtime to flush framed messages through stdout, and a synchronous
         // blocking call would prevent that.
         let path_clone = path.clone();
-        let compiler_diags = tokio::task::spawn_blocking(move || {
+        let (had_panic, compiler_diags) = tokio::task::spawn_blocking(move || {
             VFS.with(|vfs| {
                 *vfs.borrow_mut() = Some(vfs_map);
             });
 
-            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let panic_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 crate::compile_only_for_diagnostics(&path_clone);
             }));
 
+            if let Err(payload) = &panic_result {
+                let msg = if let Some(s) = payload.downcast_ref::<&str>() {
+                    s.to_string()
+                } else if let Some(s) = payload.downcast_ref::<String>() {
+                    s.clone()
+                } else {
+                    "Unknown parser error".to_string()
+                };
+                crate::diagnostics::report_error(msg, None);
+            }
+
+            let had_panic = panic_result.is_err();
             let diags = crate::diagnostics::DIAGNOSTICS.with(|d| d.borrow().clone());
 
             crate::diagnostics::clear_diagnostics();
@@ -63,10 +82,15 @@ impl Backend {
                 *vfs.borrow_mut() = None;
             });
 
-            diags
+            (had_panic, diags)
         })
         .await
-        .unwrap_or_default();
+        .unwrap_or((false, Vec::new()));
+
+        // Log if parsing panicked
+        if had_panic {
+            self.log("Parser encountered an error (see diagnostics for details)".to_string());
+        }
 
         // Map compiler diagnostics to LSP diagnostics
         let mut lsp_diags = Vec::new();
@@ -130,9 +154,7 @@ impl LanguageServer for Backend {
     }
 
     async fn initialized(&self, _: InitializedParams) {
-        self.client
-            .log_message(MessageType::INFO, "Fox language server initialized!")
-            .await;
+        self.log("Fox language server initialized!".to_string());
     }
 
     async fn shutdown(&self) -> Result<()> {
@@ -168,150 +190,181 @@ impl LanguageServer for Backend {
     ) -> Result<Option<GotoDefinitionResponse>> {
         let uri = params.text_document_position_params.text_document.uri;
         let pos = params.text_document_position_params.position;
+        self.log(format!("goto_definition: {}:{}:{}", uri, pos.line, pos.character));
+
         let path = match uri.to_file_path() {
             Ok(p) => std::fs::canonicalize(&p).unwrap_or(p),
-            Err(_) => return Ok(None),
+            Err(_) => {
+                self.log("goto_definition: failed to convert URI to path".to_string());
+                return Ok(None);
+            }
         };
 
-        let docs = self.documents.read().unwrap();
-        let content = match docs.get(&uri) {
+        let content = {
+            let docs = self.documents.read().unwrap();
+            docs.get(&uri).cloned()
+        };
+        let content = match content {
             Some(c) => c,
-            None => return Ok(None),
+            None => {
+                self.log("goto_definition: document not found".to_string());
+                return Ok(None);
+            }
         };
 
-        let converter = PositionConverter::new(content);
+        let converter = PositionConverter::new(&content);
         let offset = match converter.lsp_to_offset(&pos) {
             Some(o) => o,
             None => return Ok(None),
         };
 
-        let cache = crate::get_ast_cache().read().unwrap();
+        let location = {
+            let cache = crate::get_ast_cache().read().unwrap();
 
-        for func in &cache.funcs {
-            if let (Some(span), Some(file)) = (crate::ast::get_span(func), crate::ast::get_file(func)) {
-                if let Ok(c_file) = std::fs::canonicalize(&file) {
-                    if c_file == path && span.start <= offset && offset <= span.end {
+            eprintln!("DEBUG goto_definition: offset={}, path={:?}, funcs={}", offset, path, cache.funcs.len());
+
+            let mut result = None;
+            'outer: for func in &cache.funcs {
+                let func_span = crate::ast::get_span(func);
+                let func_file = crate::ast::get_file(func);
+                eprintln!("DEBUG goto_definition: func={:?}, span={:?}, file={:?}", func.name, func_span, func_file);
+                if let (Some(span), Some(file)) = (crate::ast::get_span(func), crate::ast::get_file(func)) {
+                    let file_matches = if let Ok(c_file) = std::fs::canonicalize(&file) {
+                        c_file == path
+                    } else {
+                        file == path.to_string_lossy()
+                    };
+                    if file_matches && span.start <= offset && offset <= span.end {
+                        eprintln!("DEBUG goto_definition: matched func {}, span={:?}..{:?}", func.name, span.start, span.end);
+                        let file_str = path.to_string_lossy();
                         for stmt in &func.body {
-                            if let Some(expr) = walk_stmt(stmt, offset, &path) {
-                                match expr {
+                            if let Some(expr) = walk_stmt(stmt, offset, &path, &file_str) {
+                                eprintln!("DEBUG goto_definition: found expr={:?}", expr);
+                                let loc = match expr {
                                     Expr::Identifier(ref name) => {
-                                        // 1. Check local variable
                                         if let Some(local_span) = find_local_decl(func, name, offset) {
-                                            let target_loc = Location::new(
+                                            Some(Location::new(
                                                 uri.clone(),
                                                 Range::new(
                                                     converter.offset_to_lsp(local_span.start),
                                                     converter.offset_to_lsp(local_span.end),
-                                                )
-                                            );
-                                            return Ok(Some(GotoDefinitionResponse::Scalar(target_loc)));
-                                        }
-                                        // 2. Check global constant
-                                        if let Some((const_span, const_file)) = find_global_const(&cache.consts, name) {
-                                            if let Ok(target_url) = Url::from_file_path(&const_file) {
+                                                ),
+                                            ))
+                                        } else if let Some((const_span, const_file)) = find_global_const(&cache.consts, name) {
+                                            Url::from_file_path(&const_file).ok().and_then(|target_url| {
                                                 let target_content = std::fs::read_to_string(&const_file).unwrap_or_default();
                                                 let target_conv = PositionConverter::new(&target_content);
-                                                let target_loc = Location::new(
+                                                Some(Location::new(
                                                     target_url,
                                                     Range::new(
                                                         target_conv.offset_to_lsp(const_span.start),
                                                         target_conv.offset_to_lsp(const_span.end),
-                                                    )
-                                                );
-                                                return Ok(Some(GotoDefinitionResponse::Scalar(target_loc)));
-                                            }
-                                        }
-                                        // 3. Check struct/type name
-                                        if let Some((struct_span, struct_file)) = find_struct(&cache.structs, name) {
-                                            if let Ok(target_url) = Url::from_file_path(&struct_file) {
+                                                    ),
+                                                ))
+                                            })
+                                        } else if let Some((struct_span, struct_file)) = find_struct(&cache.structs, name) {
+                                            Url::from_file_path(&struct_file).ok().and_then(|target_url| {
                                                 let target_content = std::fs::read_to_string(&struct_file).unwrap_or_default();
                                                 let target_conv = PositionConverter::new(&target_content);
-                                                let target_loc = Location::new(
+                                                Some(Location::new(
                                                     target_url,
                                                     Range::new(
                                                         target_conv.offset_to_lsp(struct_span.start),
                                                         target_conv.offset_to_lsp(struct_span.end),
-                                                    )
-                                                );
-                                                return Ok(Some(GotoDefinitionResponse::Scalar(target_loc)));
-                                            }
+                                                    ),
+                                                ))
+                                            })
+                                        } else {
+                                            None
                                         }
                                     }
                                     Expr::Call(ref name, _) => {
-                                        if let Some((fn_span, fn_file)) = find_function(&cache.funcs, name) {
-                                            if let Ok(target_url) = Url::from_file_path(&fn_file) {
+                                        find_function(&cache.funcs, name).and_then(|(fn_span, fn_file)| {
+                                            Url::from_file_path(&fn_file).ok().map(|target_url| {
                                                 let target_content = std::fs::read_to_string(&fn_file).unwrap_or_default();
                                                 let target_conv = PositionConverter::new(&target_content);
-                                                let target_loc = Location::new(
+                                                Location::new(
                                                     target_url,
                                                     Range::new(
                                                         target_conv.offset_to_lsp(fn_span.start),
                                                         target_conv.offset_to_lsp(fn_span.end),
-                                                    )
-                                                );
-                                                return Ok(Some(GotoDefinitionResponse::Scalar(target_loc)));
-                                            }
-                                        }
+                                                    ),
+                                                )
+                                            })
+                                        })
                                     }
                                     Expr::MethodCall(_, ref method_name, _) => {
-                                        if let Some((fn_span, fn_file)) = find_function(&cache.funcs, method_name) {
-                                            if let Ok(target_url) = Url::from_file_path(&fn_file) {
+                                        find_function(&cache.funcs, method_name).and_then(|(fn_span, fn_file)| {
+                                            Url::from_file_path(&fn_file).ok().map(|target_url| {
                                                 let target_content = std::fs::read_to_string(&fn_file).unwrap_or_default();
                                                 let target_conv = PositionConverter::new(&target_content);
-                                                let target_loc = Location::new(
+                                                Location::new(
                                                     target_url,
                                                     Range::new(
                                                         target_conv.offset_to_lsp(fn_span.start),
                                                         target_conv.offset_to_lsp(fn_span.end),
-                                                    )
-                                                );
-                                                return Ok(Some(GotoDefinitionResponse::Scalar(target_loc)));
-                                            }
-                                        }
+                                                    ),
+                                                )
+                                            })
+                                        })
                                     }
                                     Expr::StructInit(ref name, _) => {
-                                        if let Some((struct_span, struct_file)) = find_struct(&cache.structs, name) {
-                                            if let Ok(target_url) = Url::from_file_path(&struct_file) {
+                                        find_struct(&cache.structs, name).and_then(|(struct_span, struct_file)| {
+                                            Url::from_file_path(&struct_file).ok().map(|target_url| {
                                                 let target_content = std::fs::read_to_string(&struct_file).unwrap_or_default();
                                                 let target_conv = PositionConverter::new(&target_content);
-                                                let target_loc = Location::new(
+                                                Location::new(
                                                     target_url,
                                                     Range::new(
                                                         target_conv.offset_to_lsp(struct_span.start),
                                                         target_conv.offset_to_lsp(struct_span.end),
-                                                    )
-                                                );
-                                                return Ok(Some(GotoDefinitionResponse::Scalar(target_loc)));
-                                            }
-                                        }
+                                                    ),
+                                                )
+                                            })
+                                        })
                                     }
-                                    _ => {}
+                                    _ => None,
+                                };
+                                if let Some(loc) = loc {
+                                    result = Some(loc);
+                                    break 'outer;
                                 }
                             }
                         }
                     }
                 }
             }
+            result
+        };
+
+        if let Some(loc) = location {
+            return Ok(Some(GotoDefinitionResponse::Scalar(loc)));
         }
 
+        self.log("goto_definition: no definition found".to_string());
         Ok(None)
     }
 
     async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {
         let uri = params.text_document_position_params.text_document.uri;
         let pos = params.text_document_position_params.position;
+        self.log(format!("hover: {}:{}:{}", uri, pos.line, pos.character));
+
         let path = match uri.to_file_path() {
             Ok(p) => std::fs::canonicalize(&p).unwrap_or(p),
             Err(_) => return Ok(None),
         };
 
-        let docs = self.documents.read().unwrap();
-        let content = match docs.get(&uri) {
+        let content = {
+            let docs = self.documents.read().unwrap();
+            docs.get(&uri).cloned()
+        };
+        let content = match content {
             Some(c) => c,
             None => return Ok(None),
         };
 
-        let converter = PositionConverter::new(content);
+        let converter = PositionConverter::new(&content);
         let offset = match converter.lsp_to_offset(&pos) {
             Some(o) => o,
             None => return Ok(None),
@@ -319,36 +372,31 @@ impl LanguageServer for Backend {
 
         let cache = crate::get_ast_cache().read().unwrap();
 
-        let mut funcs_map = HashMap::new();
-        for f in &cache.funcs {
-            funcs_map.insert(f.name.clone(), f.clone());
-        }
-        let mut structs_map = HashMap::new();
-        for s in &cache.structs {
-            structs_map.insert(s.name.clone(), s.clone());
-        }
+        let funcs_map: HashMap<_, _> = cache.funcs.iter().map(|f| (f.name.clone(), f.clone())).collect();
+        let structs_map: HashMap<_, _> = cache.structs.iter().map(|s| (s.name.clone(), s.clone())).collect();
 
         for func in &cache.funcs {
             if let (Some(span), Some(file)) = (crate::ast::get_span(func), crate::ast::get_file(func)) {
-                if let Ok(c_file) = std::fs::canonicalize(&file) {
-                    if c_file == path && span.start <= offset && offset <= span.end {
-                        for stmt in &func.body {
-                            if let Some(expr) = walk_stmt(stmt, offset, &path) {
+                let file_matches = if let Ok(c_file) = std::fs::canonicalize(&file) {
+                    c_file == path
+                } else {
+                    file == path.to_string_lossy()
+                };
+                if file_matches && span.start <= offset && offset <= span.end {
+                    let file_str = path.to_string_lossy();
+                    for stmt in &func.body {
+                        if let Some(expr) = walk_stmt(stmt, offset, &path, &file_str) {
                                 let mut hover_text = String::new();
                                 match expr {
                                     Expr::Identifier(ref name) => {
                                         let sym = get_local_symbols(func, offset, &funcs_map, &structs_map);
                                         if let Some(ty_str) = sym.get(name) {
                                             hover_text = format!("```fox\nlet {}: {}\n```", name, ty_str);
-                                        } else if let Some((_, _)) = find_global_const(&cache.consts, name) {
-                                            if let Some(c) = cache.consts.iter().find(|c| c.name == *name || c.name.ends_with(&format!("::{}", name))) {
-                                                hover_text = format!("```fox\nconst {}: {}\n```", c.name, c.ty);
-                                            }
-                                        } else if let Some((_, _)) = find_struct(&cache.structs, name) {
-                                            if let Some(s) = cache.structs.iter().find(|s| s.name == *name || s.name.ends_with(&format!("::{}", name))) {
-                                                let fields_str = s.fields.iter().map(|f| format!("    {}: {}", f.name, f.ty)).collect::<Vec<_>>().join(",\n");
-                                                hover_text = format!("```fox\nstruct {} {{\n{}\n}}\n```", s.name, fields_str);
-                                            }
+                                        } else if let Some(c) = cache.consts.iter().find(|c| c.name == *name || c.name.ends_with(&format!("::{}", name))) {
+                                            hover_text = format!("```fox\nconst {}: {}\n```", c.name, c.ty);
+                                        } else if let Some(s) = cache.structs.iter().find(|s| s.name == *name || s.name.ends_with(&format!("::{}", name))) {
+                                            let fields_str = s.fields.iter().map(|f| format!("    {}: {}", f.name, f.ty)).collect::<Vec<_>>().join(",\n");
+                                            hover_text = format!("```fox\nstruct {} {{\n{}\n}}\n```", s.name, fields_str);
                                         }
                                     }
                                     Expr::Call(ref name, _) => {
@@ -386,9 +434,9 @@ impl LanguageServer for Backend {
                         }
                     }
                 }
-            }
         }
 
+        self.log("hover: no result found".to_string());
         Ok(None)
     }
 
@@ -589,81 +637,93 @@ impl PositionConverter {
     }
 }
 
-fn check_span(span: Option<crate::ast::Span>, offset: usize, file_path: &Path, node_file: Option<String>) -> bool {
-    if let (Some(s), Some(nf)) = (span, node_file) {
-        if let Ok(c_file) = std::fs::canonicalize(&nf) {
+fn check_span(span: Option<crate::ast::Span>, offset: usize, file_path: &Path, node_file: &Option<String>) -> bool {
+    if let (Some(s), Some(nf)) = (span, node_file.as_ref()) {
+        if let Ok(c_file) = std::fs::canonicalize(nf) {
             if let Ok(c_fp) = std::fs::canonicalize(file_path) {
-                return c_file == c_fp && s.start <= offset && offset <= s.end;
+                c_file == c_fp && s.start <= offset && offset <= s.end
+            } else {
+                nf == &file_path.to_string_lossy() && s.start <= offset && offset <= s.end
             }
+        } else {
+            nf == &file_path.to_string_lossy() && s.start <= offset && offset <= s.end
         }
-        nf == file_path.to_string_lossy() && s.start <= offset && offset <= s.end
     } else {
         false
     }
 }
 
-fn walk_expr(expr: &Expr, offset: usize, file_path: &Path) -> Option<Expr> {
-    if !check_span(crate::ast::get_span(expr), offset, file_path, crate::ast::get_file(expr)) {
+fn check_expr_span(expr: &Expr, offset: usize, file_path: &Path, _file_str: &str) -> bool {
+    if let Some(span) = crate::ast::get_span(expr) {
+        let expr_file = crate::ast::get_file(expr);
+        check_span(Some(span), offset, file_path, &expr_file)
+    } else {
+        true
+    }
+}
+
+fn walk_expr(expr: &Expr, offset: usize, file_path: &Path, file_str: &str) -> Option<Expr> {
+    if !check_expr_span(expr, offset, file_path, file_str) {
         return None;
     }
 
     match expr {
         Expr::Binary(l, _, r) => {
-            walk_expr(l, offset, file_path).or_else(|| walk_expr(r, offset, file_path))
+            walk_expr(l, offset, file_path, file_str).or_else(|| walk_expr(r, offset, file_path, file_str))
         }
         Expr::Call(_, args) => {
             for arg in args {
-                if let Some(res) = walk_expr(arg, offset, file_path) {
+                if let Some(res) = walk_expr(arg, offset, file_path, file_str) {
                     return Some(res);
                 }
             }
             None
         }
         Expr::MethodCall(obj, _, args) => {
-            if let Some(res) = walk_expr(obj, offset, file_path) {
+            if let Some(res) = walk_expr(obj, offset, file_path, file_str) {
                 return Some(res);
             }
             for arg in args {
-                if let Some(res) = walk_expr(arg, offset, file_path) {
+                if let Some(res) = walk_expr(arg, offset, file_path, file_str) {
                     return Some(res);
                 }
             }
             None
         }
         Expr::FieldAccess(obj, _) => {
-            walk_expr(obj, offset, file_path)
+            walk_expr(obj, offset, file_path, file_str)
         }
         Expr::StructInit(_, fields) => {
             for (_, fexpr) in fields {
-                if let Some(res) = walk_expr(fexpr, offset, file_path) {
+                if let Some(res) = walk_expr(fexpr, offset, file_path, file_str) {
                     return Some(res);
                 }
             }
             None
         }
         Expr::IndexAccess(arr, idx) => {
-            walk_expr(arr, offset, file_path).or_else(|| walk_expr(idx, offset, file_path))
+            walk_expr(arr, offset, file_path, file_str).or_else(|| walk_expr(idx, offset, file_path, file_str))
         }
         Expr::New(_, args) => {
             for arg in args {
-                if let Some(res) = walk_expr(arg, offset, file_path) {
+                if let Some(res) = walk_expr(arg, offset, file_path, file_str) {
                     return Some(res);
                 }
             }
             None
         }
         Expr::Match(cond, arms) => {
-            if let Some(res) = walk_expr(cond, offset, file_path) {
+            if let Some(res) = walk_expr(cond, offset, file_path, file_str) {
                 return Some(res);
             }
             for arm in arms {
                 for stmt in &arm.body {
-                    if let Some(res) = walk_stmt(stmt, offset, file_path) {
+                    if let Some(res) = walk_stmt(stmt, offset, file_path, file_str) {
                         return Some(res);
                     }
                 }
                 if let Some(val) = &arm.val {
-                    if let Some(res) = walk_expr(val, offset, file_path) {
+                    if let Some(res) = walk_expr(val, offset, file_path, file_str) {
                         return Some(res);
                     }
                 }
@@ -671,29 +731,29 @@ fn walk_expr(expr: &Expr, offset: usize, file_path: &Path) -> Option<Expr> {
             None
         }
         Expr::If(cond, then_b, else_b) => {
-            if let Some(res) = walk_expr(cond, offset, file_path) {
+            if let Some(res) = walk_expr(cond, offset, file_path, file_str) {
                 return Some(res);
             }
             let (then_stmts, then_val) = &**then_b;
             for stmt in then_stmts {
-                if let Some(res) = walk_stmt(stmt, offset, file_path) {
+                if let Some(res) = walk_stmt(stmt, offset, file_path, file_str) {
                     return Some(res);
                 }
             }
             if let Some(val) = then_val {
-                if let Some(res) = walk_expr(val, offset, file_path) {
+                if let Some(res) = walk_expr(val, offset, file_path, file_str) {
                     return Some(res);
                 }
             }
             if let Some(eb) = else_b {
                 let (else_stmts, else_val) = &**eb;
                 for stmt in else_stmts {
-                    if let Some(res) = walk_stmt(stmt, offset, file_path) {
+                    if let Some(res) = walk_stmt(stmt, offset, file_path, file_str) {
                         return Some(res);
                     }
                 }
                 if let Some(val) = else_val {
-                    if let Some(res) = walk_expr(val, offset, file_path) {
+                    if let Some(res) = walk_expr(val, offset, file_path, file_str) {
                         return Some(res);
                     }
                 }
@@ -701,11 +761,11 @@ fn walk_expr(expr: &Expr, offset: usize, file_path: &Path) -> Option<Expr> {
             None
         }
         Expr::InvokeFuncPtr(func, args) => {
-            if let Some(res) = walk_expr(func, offset, file_path) {
+            if let Some(res) = walk_expr(func, offset, file_path, file_str) {
                 return Some(res);
             }
             for arg in args {
-                if let Some(res) = walk_expr(arg, offset, file_path) {
+                if let Some(res) = walk_expr(arg, offset, file_path, file_str) {
                     return Some(res);
                 }
             }
@@ -713,7 +773,7 @@ fn walk_expr(expr: &Expr, offset: usize, file_path: &Path) -> Option<Expr> {
         }
         Expr::Closure(func) => {
             for stmt in &func.body {
-                if let Some(res) = walk_stmt(stmt, offset, file_path) {
+                if let Some(res) = walk_stmt(stmt, offset, file_path, file_str) {
                     return Some(res);
                 }
             }
@@ -721,21 +781,21 @@ fn walk_expr(expr: &Expr, offset: usize, file_path: &Path) -> Option<Expr> {
         }
         Expr::ClosureInstantiate(_, _, args) => {
             for arg in args {
-                if let Some(res) = walk_expr(arg, offset, file_path) {
+                if let Some(res) = walk_expr(arg, offset, file_path, file_str) {
                     return Some(res);
                 }
             }
             None
         }
         Expr::Cast(e, _) => {
-            walk_expr(e, offset, file_path)
+            walk_expr(e, offset, file_path, file_str)
         }
         Expr::Spread(e) => {
-            walk_expr(e, offset, file_path)
+            walk_expr(e, offset, file_path, file_str)
         }
         Expr::Tuple(exprs) => {
             for e in exprs {
-                if let Some(res) = walk_expr(e, offset, file_path) {
+                if let Some(res) = walk_expr(e, offset, file_path, file_str) {
                     return Some(res);
                 }
             }
@@ -743,10 +803,10 @@ fn walk_expr(expr: &Expr, offset: usize, file_path: &Path) -> Option<Expr> {
         }
         Expr::MapLit(pairs) => {
             for (k, v) in pairs {
-                if let Some(res) = walk_expr(k, offset, file_path) {
+                if let Some(res) = walk_expr(k, offset, file_path, file_str) {
                     return Some(res);
                 }
-                if let Some(res) = walk_expr(v, offset, file_path) {
+                if let Some(res) = walk_expr(v, offset, file_path, file_str) {
                     return Some(res);
                 }
             }
@@ -754,7 +814,7 @@ fn walk_expr(expr: &Expr, offset: usize, file_path: &Path) -> Option<Expr> {
         }
         Expr::VecLit(elems) => {
             for e in elems {
-                if let Some(res) = walk_expr(e, offset, file_path) {
+                if let Some(res) = walk_expr(e, offset, file_path, file_str) {
                     return Some(res);
                 }
             }
@@ -764,44 +824,45 @@ fn walk_expr(expr: &Expr, offset: usize, file_path: &Path) -> Option<Expr> {
     }.or(Some(expr.clone()))
 }
 
-fn walk_stmt(stmt: &Stmt, offset: usize, file_path: &Path) -> Option<Expr> {
-    if !check_span(crate::ast::get_span(stmt), offset, file_path, crate::ast::get_file(stmt)) {
+fn walk_stmt(stmt: &Stmt, offset: usize, file_path: &Path, file_str: &str) -> Option<Expr> {
+    let stmt_file = crate::ast::get_file(stmt);
+    if !check_span(crate::ast::get_span(stmt), offset, file_path, &stmt_file) {
         return None;
     }
 
     match stmt {
-        Stmt::Let(_, _, expr) => walk_expr(expr, offset, file_path),
-        Stmt::LetTuple(_, expr) => walk_expr(expr, offset, file_path),
-        Stmt::ExprStmt(expr) => walk_expr(expr, offset, file_path),
+        Stmt::Let(_, _, expr) => walk_expr(expr, offset, file_path, file_str),
+        Stmt::LetTuple(_, expr) => walk_expr(expr, offset, file_path, file_str),
+        Stmt::ExprStmt(expr) => walk_expr(expr, offset, file_path, file_str),
         Stmt::Return(opt_expr) => {
             if let Some(expr) = opt_expr {
-                walk_expr(expr, offset, file_path)
+                walk_expr(expr, offset, file_path, file_str)
             } else {
                 None
             }
         }
-        Stmt::Assign(_, expr) => walk_expr(expr, offset, file_path),
-        Stmt::AssignPlus(_, expr) => walk_expr(expr, offset, file_path),
+        Stmt::Assign(_, expr) => walk_expr(expr, offset, file_path, file_str),
+        Stmt::AssignPlus(_, expr) => walk_expr(expr, offset, file_path, file_str),
         Stmt::AssignIndex(arr, idx, val) => {
-            walk_expr(arr, offset, file_path)
-                .or_else(|| walk_expr(idx, offset, file_path))
-                .or_else(|| walk_expr(val, offset, file_path))
+            walk_expr(arr, offset, file_path, file_str)
+                .or_else(|| walk_expr(idx, offset, file_path, file_str))
+                .or_else(|| walk_expr(val, offset, file_path, file_str))
         }
         Stmt::AssignField(obj, _, val) => {
-            walk_expr(obj, offset, file_path).or_else(|| walk_expr(val, offset, file_path))
+            walk_expr(obj, offset, file_path, file_str).or_else(|| walk_expr(val, offset, file_path, file_str))
         }
         Stmt::If(cond, then_b, else_b) => {
-            if let Some(res) = walk_expr(cond, offset, file_path) {
+            if let Some(res) = walk_expr(cond, offset, file_path, file_str) {
                 return Some(res);
             }
             for s in then_b {
-                if let Some(res) = walk_stmt(s, offset, file_path) {
+                if let Some(res) = walk_stmt(s, offset, file_path, file_str) {
                     return Some(res);
                 }
             }
             if let Some(eb) = else_b {
                 for s in eb {
-                    if let Some(res) = walk_stmt(s, offset, file_path) {
+                    if let Some(res) = walk_stmt(s, offset, file_path, file_str) {
                         return Some(res);
                     }
                 }
@@ -809,11 +870,11 @@ fn walk_stmt(stmt: &Stmt, offset: usize, file_path: &Path) -> Option<Expr> {
             None
         }
         Stmt::While(cond, body) => {
-            if let Some(res) = walk_expr(cond, offset, file_path) {
+            if let Some(res) = walk_expr(cond, offset, file_path, file_str) {
                 return Some(res);
             }
             for s in body {
-                if let Some(res) = walk_stmt(s, offset, file_path) {
+                if let Some(res) = walk_stmt(s, offset, file_path, file_str) {
                     return Some(res);
                 }
             }
@@ -821,7 +882,7 @@ fn walk_stmt(stmt: &Stmt, offset: usize, file_path: &Path) -> Option<Expr> {
         }
         Stmt::For(_, _, body) => {
             for s in body {
-                if let Some(res) = walk_stmt(s, offset, file_path) {
+                if let Some(res) = walk_stmt(s, offset, file_path, file_str) {
                     return Some(res);
                 }
             }
@@ -1018,6 +1079,93 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_hover_local_var() {
+        let (service, _socket) = LspService::new(|client| Backend {
+            client,
+            documents: RwLock::new(HashMap::new()),
+        });
+        let backend = service.inner();
+
+        let test_path = PathBuf::from("/tmp/test_hover.fox");
+        let uri = Url::from_file_path(&test_path).unwrap();
+        let source = "fn main(x: i32) { x; }".to_string();
+        backend.documents.write().unwrap().insert(uri.clone(), source.clone());
+
+        crate::diagnostics::CURRENT_FILE.with(|cf| {
+            *cf.borrow_mut() = Some("/tmp/test_hover.fox".to_string());
+        });
+
+        let mut funcs = Vec::new();
+
+        let f = Function {
+            is_pub: false,
+            is_extern: false,
+            is_compiler: false,
+            _is_pub: false,
+            _is_static: false,
+            parent_struct: None,
+            name: "main".to_string(),
+            generic: crate::ast::GenericParams { params: vec![] },
+            params: vec![
+                crate::ast::Param {
+                    name: "x".to_string(),
+                    ty: crate::ast::Type::I32,
+                    is_variadic: false,
+                },
+            ],
+            return_ty: crate::ast::Type::Void,
+            body: vec![
+                Stmt::ExprStmt(Expr::Identifier("x".to_string())),
+            ],
+            attributes: vec![],
+        };
+        funcs.push(f);
+
+        let f_span = crate::ast::Span { start: 0, end: 22, line: 1, column: 1 };
+        crate::ast::register_span(&funcs[0], f_span);
+
+        let stmt_span = crate::ast::Span { start: 18, end: 20, line: 1, column: 18 };
+        crate::ast::register_span(&funcs[0].body[0], stmt_span);
+
+        if let Stmt::ExprStmt(expr) = &funcs[0].body[0] {
+            let ident_span = crate::ast::Span { start: 18, end: 19, line: 1, column: 18 };
+            crate::ast::register_span(expr, ident_span);
+        }
+
+        {
+            let mut cache = crate::get_ast_cache().write().unwrap();
+            cache.structs = vec![];
+            cache.funcs = funcs;
+            cache.impls = vec![];
+            cache.consts = vec![];
+        }
+
+        let params = HoverParams {
+            text_document_position_params: TextDocumentPositionParams {
+                text_document: TextDocumentIdentifier { uri: uri.clone() },
+                position: Position::new(0, 18),
+            },
+            work_done_progress_params: WorkDoneProgressParams { work_done_token: None },
+        };
+
+        let res = backend.hover(params).await.unwrap();
+        assert!(res.is_some());
+        if let Some(hover) = res {
+            if let HoverContents::Scalar(MarkedString::String(text)) = &hover.contents {
+                assert!(text.contains("x"), "Hover text should contain variable name, got: {}", text);
+                assert!(text.contains("i32"), "Hover text should contain type i32, got: {}", text);
+            } else {
+                panic!("Expected Scalar String hover contents, got: {:?}", hover.contents);
+            }
+        }
+
+        crate::clear_ast_cache();
+        crate::diagnostics::CURRENT_FILE.with(|cf| {
+            *cf.borrow_mut() = None;
+        });
+    }
+
+    #[tokio::test]
     async fn test_document_symbol() {
         let (service, _socket) = LspService::new(|client| Backend {
             client,
@@ -1095,6 +1243,158 @@ mod tests {
         } else {
             panic!("Expected nested document symbols");
         }
+
+        crate::clear_ast_cache();
+        crate::diagnostics::CURRENT_FILE.with(|cf| {
+            *cf.borrow_mut() = None;
+        });
+    }
+
+    #[tokio::test]
+    async fn test_goto_definition_local_var() {
+        let (service, _socket) = LspService::new(|client| Backend {
+            client,
+            documents: RwLock::new(HashMap::new()),
+        });
+        let backend = service.inner();
+
+        let test_path = PathBuf::from("/tmp/test_goto.fox");
+        let uri = Url::from_file_path(&test_path).unwrap();
+        let source = "fn main(x: i32) { x; }".to_string();
+        backend.documents.write().unwrap().insert(uri.clone(), source.clone());
+
+        crate::diagnostics::CURRENT_FILE.with(|cf| {
+            *cf.borrow_mut() = Some("/tmp/test_goto.fox".to_string());
+        });
+
+        let mut funcs = Vec::new();
+
+        let f = Function {
+            is_pub: false,
+            is_extern: false,
+            is_compiler: false,
+            _is_pub: false,
+            _is_static: false,
+            parent_struct: None,
+            name: "main".to_string(),
+            generic: crate::ast::GenericParams { params: vec![] },
+            params: vec![
+                crate::ast::Param {
+                    name: "x".to_string(),
+                    ty: crate::ast::Type::I32,
+                    is_variadic: false,
+                },
+            ],
+            return_ty: crate::ast::Type::Void,
+            body: vec![
+                Stmt::ExprStmt(Expr::Identifier("x".to_string())),
+            ],
+            attributes: vec![],
+        };
+        funcs.push(f);
+
+        let f_span = crate::ast::Span { start: 0, end: 22, line: 1, column: 1 };
+        crate::ast::register_span(&funcs[0], f_span);
+
+        let param_span = crate::ast::Span { start: 12, end: 13, line: 0, column: 12 };
+        crate::ast::register_span(&funcs[0].params[0], param_span);
+
+        let stmt_span = crate::ast::Span { start: 18, end: 20, line: 1, column: 18 };
+        crate::ast::register_span(&funcs[0].body[0], stmt_span);
+
+        if let Stmt::ExprStmt(expr) = &funcs[0].body[0] {
+            let ident_span = crate::ast::Span { start: 18, end: 19, line: 1, column: 18 };
+            crate::ast::register_span(expr, ident_span);
+        }
+
+        {
+            let mut cache = crate::get_ast_cache().write().unwrap();
+            cache.structs = vec![];
+            cache.funcs = funcs;
+            cache.impls = vec![];
+            cache.consts = vec![];
+        }
+
+        let params = GotoDefinitionParams {
+            text_document_position_params: TextDocumentPositionParams {
+                text_document: TextDocumentIdentifier { uri: uri.clone() },
+                position: Position::new(0, 18),
+            },
+            work_done_progress_params: WorkDoneProgressParams { work_done_token: None },
+            partial_result_params: PartialResultParams { partial_result_token: None },
+        };
+
+        let res = backend.goto_definition(params).await.unwrap();
+        assert!(res.is_some(), "goto_definition should find the parameter 'x'");
+        if let Some(GotoDefinitionResponse::Scalar(loc)) = res {
+            assert!(loc.range.start.character <= 18, "Definition should be at or before position 18");
+        } else {
+            panic!("Expected Scalar goto definition response, got: {:?}", res);
+        }
+
+        crate::clear_ast_cache();
+        crate::diagnostics::CURRENT_FILE.with(|cf| {
+            *cf.borrow_mut() = None;
+        });
+    }
+
+    #[tokio::test]
+    async fn test_goto_definition_with_compile() {
+        let (service, _socket) = LspService::new(|client| Backend {
+            client,
+            documents: RwLock::new(HashMap::new()),
+        });
+        let backend = service.inner();
+
+        // Use a temp file path for the test
+        let test_dir = std::env::temp_dir().join("fox_lsp_test");
+        let _ = std::fs::create_dir_all(&test_dir);
+        let test_file = test_dir.join("test_goto_compile.fox");
+        // A simple file with a local var reference
+        let source = "fn test() {\n    let y: i32 = 42;\n    y;\n}\n";
+        std::fs::write(&test_file, source).unwrap();
+
+        let uri = Url::from_file_path(&test_file).unwrap();
+
+        // Simulate did_open: store document, then validate
+        backend.documents.write().unwrap().insert(uri.clone(), source.to_string());
+        backend.validate_document(uri.clone()).await;
+
+        // Check what's in the cache
+        {
+            let cache = crate::get_ast_cache().read().unwrap();
+            eprintln!("DEBUG: cache.funcs.len = {}", cache.funcs.len());
+            for f in &cache.funcs {
+                eprintln!("DEBUG:   func name = {:?}", f.name);
+                eprintln!("DEBUG:   func span = {:?}", crate::ast::get_span(f));
+                eprintln!("DEBUG:   func file = {:?}", crate::ast::get_file(f));
+                for (i, stmt) in f.body.iter().enumerate() {
+                    eprintln!("DEBUG:   stmt[{}] span = {:?}", i, crate::ast::get_span(stmt));
+                }
+            }
+        }
+
+        // Now test goto_definition at position of 'y' on the last line
+        // Line 2 (0-indexed): "    y;\n" — 'y' is at character 4
+        let params = GotoDefinitionParams {
+            text_document_position_params: TextDocumentPositionParams {
+                text_document: TextDocumentIdentifier { uri: uri.clone() },
+                position: Position::new(2, 4),
+            },
+            work_done_progress_params: WorkDoneProgressParams { work_done_token: None },
+            partial_result_params: PartialResultParams { partial_result_token: None },
+        };
+
+        let res = backend.goto_definition(params).await.unwrap();
+        // We expect to find the definition of 'y' at line 1 (let y: i32 = 42;)
+        assert!(res.is_some(), "goto_definition should find local var 'y' after compile");
+
+        crate::clear_ast_cache();
+        crate::diagnostics::clear_diagnostics();
+        let _ = std::fs::remove_dir_all(&test_dir);
+        crate::diagnostics::CURRENT_FILE.with(|cf| {
+            *cf.borrow_mut() = None;
+        });
     }
 
     #[tokio::test]
@@ -1127,5 +1427,6 @@ mod tests {
         VFS.with(|vfs| {
             *vfs.borrow_mut() = None;
         });
+        crate::clear_ast_cache();
     }
 }
