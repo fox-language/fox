@@ -12,7 +12,9 @@ pub fn get_expr_type(
     funcs: &HashMap<String, Function>,
     structs: &HashMap<String, StructDef>,
 ) -> String {
-    crate::diagnostics::set_current_span(crate::ast::get_span(expr));
+    if let Some(span) = crate::ast::get_span(expr) {
+        crate::diagnostics::set_current_span(Some(span));
+    }
     match expr {
         Expr::Identifier(n) => {
             if sym.contains_key(n) {
@@ -323,6 +325,8 @@ pub fn validate_call_types_in_stmt(
     funcs: &HashMap<String, Function>,
     structs: &HashMap<String, StructDef>,
 ) {
+    let previous_span = crate::diagnostics::get_current_span();
+    crate::diagnostics::set_current_span(crate::ast::get_span(stmt));
     match stmt {
         Stmt::Let(name, ty_annot, expr) => {
             let expr_ty = safe_get_expr_type(expr, sym, funcs, structs);
@@ -402,6 +406,7 @@ pub fn validate_call_types_in_stmt(
             }
         }
     }
+    crate::diagnostics::set_current_span(previous_span);
 }
 
 fn is_generic_param(ty: &str) -> bool {

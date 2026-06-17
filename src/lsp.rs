@@ -615,7 +615,22 @@ impl LanguageServer for Backend {
         // without expression spans or imported functions).
         if let Some((name, _start, _end)) = symbol_at_offset(&content, offset) {
             let mut hover_text = String::new();
-            if let Some(ref func) = matched_func {
+            let enclosing_func = matched_func.or_else(|| {
+                cache.funcs.iter().find(|f| {
+                    let (Some(span), Some(file)) =
+                        (crate::ast::get_span(f), crate::ast::get_file(f))
+                    else {
+                        return false;
+                    };
+                    let file_matches = if let Ok(c_file) = std::fs::canonicalize(&file) {
+                        c_file == path
+                    } else {
+                        file == path.to_string_lossy()
+                    };
+                    file_matches && span.start <= offset && offset <= span.end
+                })
+            });
+            if let Some(func) = enclosing_func {
                 if find_local_decl(func, &name, offset).is_some() {
                     let sym = get_local_symbols(func, offset, &funcs_map, &structs_map);
                     if let Some(ty_str) = sym.get(&name) {
@@ -1743,6 +1758,124 @@ mod tests {
             res.is_some(),
             "goto_definition should find local var 'y' after compile"
         );
+
+        crate::clear_ast_cache();
+        crate::diagnostics::clear_diagnostics();
+        let _ = std::fs::remove_dir_all(&test_dir);
+        crate::diagnostics::CURRENT_FILE.with(|cf| {
+            *cf.borrow_mut() = None;
+        });
+    }
+
+    #[tokio::test]
+    async fn test_diagnostics_range() {
+        let _guard = TEST_LOCK.lock().await;
+        let test_dir = std::env::temp_dir().join("fox_lsp_diag_range");
+        let _ = std::fs::create_dir_all(&test_dir);
+        let test_file = test_dir.join("test.fox");
+        let source = "fn add(a: i32, b: i32): i32 {\n    return a + b;\n}\n\nfn test_func(): i32 {\n    add(5, \"hello\");\n    return 1;\n}\n";
+        std::fs::write(&test_file, source).unwrap();
+
+        crate::compile_only_for_diagnostics(&test_file);
+
+        let diags = crate::diagnostics::DIAGNOSTICS.with(|d| d.borrow().clone());
+        assert!(
+            !diags.is_empty(),
+            "Diagnostics should be generated for type mismatch"
+        );
+
+        let converter = PositionConverter::new(source);
+        let mut found_type_mismatch = false;
+        for diag in &diags {
+            if diag.message == "Type mismatch: expected 'i32', found 'str'" {
+                found_type_mismatch = true;
+                let span = diag
+                    .span
+                    .expect("Type mismatch diagnostic should have a span");
+                assert!(
+                    span.start > 0,
+                    "Diagnostic span start should not be 0, got {:?}",
+                    span
+                );
+                let pos = converter.offset_to_lsp(span.start);
+                // The string literal "hello" is on 0-indexed line 5 at some column.
+                assert_eq!(
+                    pos.line, 5,
+                    "Diagnostic should point at line 6 (1-indexed), got {:?}",
+                    pos
+                );
+            }
+        }
+        assert!(
+            found_type_mismatch,
+            "Expected a type mismatch diagnostic"
+        );
+
+        crate::diagnostics::clear_diagnostics();
+        crate::clear_ast_cache();
+        let _ = std::fs::remove_dir_all(&test_dir);
+        crate::diagnostics::CURRENT_FILE.with(|cf| {
+            *cf.borrow_mut() = None;
+        });
+    }
+
+    #[tokio::test]
+    async fn test_hover_local_var_after_compile() {
+        let _guard = TEST_LOCK.lock().await;
+        let test_dir = std::env::temp_dir().join("fox_lsp_hover_local");
+        let _ = std::fs::create_dir_all(&test_dir);
+        let test_file = test_dir.join("test.fox");
+        let source = "fn test(): i32 {\n    let y: i32 = 42;\n    y;\n}\n";
+        std::fs::write(&test_file, source).unwrap();
+
+        let (service, _socket) = LspService::new(|client| Backend {
+            client,
+            documents: RwLock::new(HashMap::new()),
+        });
+        let backend = service.inner();
+        let uri = Url::from_file_path(&test_file).unwrap();
+
+        backend
+            .documents
+            .write()
+            .unwrap()
+            .insert(uri.clone(), source.to_string());
+        backend.validate_document(uri.clone()).await;
+
+        // Hover over the 'y' reference on line 2 (0-indexed), character 4.
+        let hover_params = HoverParams {
+            text_document_position_params: TextDocumentPositionParams {
+                text_document: TextDocumentIdentifier { uri: uri.clone() },
+                position: Position::new(2, 4),
+            },
+            work_done_progress_params: WorkDoneProgressParams {
+                work_done_token: None,
+            },
+        };
+        let hover_res = backend.hover(hover_params).await.unwrap();
+        assert!(
+            hover_res.is_some(),
+            "hover should find local variable 'y' at line 3"
+        );
+        if let Some(hover) = hover_res {
+            if let HoverContents::Scalar(MarkedString::String(text)) = &hover.contents {
+                assert!(
+                    text.contains("y"),
+                    "Hover text should contain variable name, got: {}",
+                    text
+                );
+                assert!(
+                    text.contains("i32"),
+                    "Hover text should contain type i32, got: {}",
+                    text
+                );
+            } else {
+                panic!(
+                    "Expected Scalar String hover contents, got: {:?}",
+                    hover.contents
+                );
+            }
+        }
 
         crate::clear_ast_cache();
         crate::diagnostics::clear_diagnostics();
