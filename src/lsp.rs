@@ -614,6 +614,13 @@ impl LanguageServer for Backend {
         // Token-based fallback for symbols the AST walker missed (e.g. method calls
         // without expression spans or imported functions).
         if let Some((name, _start, _end)) = symbol_at_offset(&content, offset) {
+            // Don't treat string literal contents as symbols - e.g. hovering on
+            // "class" in set_attribute("class", ...) should not resolve to a
+            // struct method named `class`.
+            if is_offset_in_string_literal(&content, offset) {
+                return Ok(None);
+            }
+
             let mut hover_text = String::new();
             let enclosing_func = matched_func.or_else(|| {
                 cache.funcs.iter().find(|f| {
@@ -1319,6 +1326,28 @@ fn symbol_at_offset(source: &str, offset: usize) -> Option<(String, usize, usize
     }
 }
 
+fn is_offset_in_string_literal(source: &str, offset: usize) -> bool {
+    let mut backslash_count = 0;
+    let mut quote_count = 0;
+    for (i, c) in source.char_indices() {
+        if i >= offset {
+            break;
+        }
+        if c == '\\' {
+            backslash_count += 1;
+        } else if c == '"' {
+            // An escaped quote (\" or \") doesn't toggle in/out.
+            if backslash_count % 2 == 0 {
+                quote_count += 1;
+            }
+            backslash_count = 0;
+        } else {
+            backslash_count = 0;
+        }
+    }
+    quote_count % 2 == 1
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1880,6 +1909,96 @@ mod tests {
         crate::clear_ast_cache();
         crate::diagnostics::clear_diagnostics();
         let _ = std::fs::remove_dir_all(&test_dir);
+        crate::diagnostics::CURRENT_FILE.with(|cf| {
+            *cf.borrow_mut() = None;
+        });
+    }
+
+    #[tokio::test]
+    async fn test_hover_local_var_from_static_method_call() {
+        let _guard = TEST_LOCK.lock().await;
+        let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| std::env::current_dir().unwrap());
+        let fox_path = manifest_dir.to_string_lossy().to_string();
+        unsafe {
+            std::env::set_var("FOX_PATH", &fox_path);
+        }
+
+        let test_dir = std::env::temp_dir().join("fox_lsp_hover_nav");
+        let _ = std::fs::create_dir_all(&test_dir);
+        let test_file = test_dir.join("test.fox");
+        let source = "use std::global::{Document, Element};\n\nstruct Div {}\n\nimpl Div {\n    pub fn class(): void {}\n}\n\nfn main(): void {\n    let nav = Document::create_element(\"nav\");\n    nav.set_attribute(\"class\", \"logo\");\n}\n";
+        std::fs::write(&test_file, source).unwrap();
+
+        let (service, _socket) = LspService::new(|client| Backend {
+            client,
+            documents: RwLock::new(HashMap::new()),
+        });
+        let backend = service.inner();
+        let uri = Url::from_file_path(&test_file).unwrap();
+
+        backend
+            .documents
+            .write()
+            .unwrap()
+            .insert(uri.clone(), source.to_string());
+        backend.validate_document(uri.clone()).await;
+
+        // Hover over 'nav' on line 9 (0-indexed), after "let " at char 8.
+        let hover_params = HoverParams {
+            text_document_position_params: TextDocumentPositionParams {
+                text_document: TextDocumentIdentifier { uri: uri.clone() },
+                position: Position::new(9, 8),
+            },
+            work_done_progress_params: WorkDoneProgressParams {
+                work_done_token: None,
+            },
+        };
+        let hover_res = backend.hover(hover_params).await.unwrap();
+        assert!(
+            hover_res.is_some(),
+            "hover should find local variable 'nav'"
+        );
+        if let Some(hover) = hover_res {
+            if let HoverContents::Scalar(MarkedString::String(text)) = &hover.contents {
+                assert!(
+                    text.contains("nav"),
+                    "Hover text should contain variable name, got: {}",
+                    text
+                );
+            } else {
+                panic!(
+                    "Expected Scalar String hover contents, got: {:?}",
+                    hover.contents
+                );
+            }
+        }
+
+        // Hover over the string literal "class" inside set_attribute (line 10, char 23).
+        // It must NOT resolve to Div::class or any other method named class, and
+        // it should not resolve to any symbol from inside a string literal.
+        let string_hover_params = HoverParams {
+            text_document_position_params: TextDocumentPositionParams {
+                text_document: TextDocumentIdentifier { uri: uri.clone() },
+                position: Position::new(10, 23),
+            },
+            work_done_progress_params: WorkDoneProgressParams {
+                work_done_token: None,
+            },
+        };
+        let string_hover_res = backend.hover(string_hover_params).await.unwrap();
+        assert!(
+            string_hover_res.is_none(),
+            "Hover inside a string literal should not return any symbol result"
+        );
+
+        crate::clear_ast_cache();
+        crate::diagnostics::clear_diagnostics();
+        let _ = std::fs::remove_dir_all(&test_dir);
+        unsafe {
+            std::env::remove_var("FOX_PATH");
+        }
         crate::diagnostics::CURRENT_FILE.with(|cf| {
             *cf.borrow_mut() = None;
         });
